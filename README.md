@@ -76,7 +76,7 @@ AI_FORGE_SOURCE=/path/to/saas-forge bash scripts/check-fullstack.sh
 
 离线验证设置`AI_MAVEN_OFFLINE=true`，私有依赖目录用`AI_MAVEN_REPOSITORY`。平台验收需要三个真实可执行jar，不提供时直接失败。[CI](docs/ci.md)明确区分发布SDK、三工程、平台集成和完整Shell门禁。
 
-全栈测试使用真实Shell、IAM PKCE、Gateway、AI、Node DSH、DB/Redis/MQ；只有模型/外部MCP是本地确定性HTTPS提供方，无生产Key或计费请求。Playwright覆盖1440/1024两宽登录、会话、分批输出、审批、历史、删除、权限与租户隔离，并核对真实用量/平台回传。截图/日志默认在`ai-service/target/fullstack`，可通过`AI_E2E_OUTPUT`放到`/tmp`。
+全栈测试使用真实Shell、IAM PKCE、Gateway、AI、Node DSH、DB/Redis/MQ；只有模型/外部MCP是本地确定性HTTPS提供方，无生产Key或计费请求。Playwright覆盖1440/1024两宽登录、会话、分批输出、审批、历史、删除、权限与租户隔离，确认部分回答在完成前可见，并核对真实用量/平台回传。截图/日志默认在`ai-service/target/fullstack`，可通过`AI_E2E_OUTPUT`放到`/tmp`。
 
 ## 部署与运维
 

@@ -1,6 +1,6 @@
 # AI 平台 v1 规格
 
-Status: ready-for-agent（本仓库执行）
+Status: resolved（本仓库本地实现与必要验收完成，2026-11-14）
 
 术语以 [GLOSSARY.md](../../GLOSSARY.md) 为准；AI 术语正文在 [docs/GLOSSARY.md](../../docs/GLOSSARY.md)。平台边界由 [ADR-0028](https://github.com/crane199709/saas-forge/blob/main/docs/adr/0028-ai-capability-as-separate-business-product.md) 记录。设计基线见 [design.md](design.md)。
 
@@ -109,3 +109,7 @@ v1 交付助手、Skill、MCP、模型、Prompt 五项，以及配额、审计�
 - 仓库已建立：术语迁入 `docs/GLOSSARY.md`，6 个 ADR 位于 `docs/adr/`，本规格的后续工单由当前仓库的 issue tracker 维护。
 - DSH 是开发者预览，固定版本与契约测试是硬约束；升级策略见 design.md。
 - 本规格的拆分见 `issues/`，编号 00 为跨仓库平台前置。
+
+## 实现与验收
+
+工单00–12均已按本地Markdown tracker解决。最终源码、真实IAM/DB/MQ与DSH证据、真实Shell两宽主链路、Linux生产镜像及资源契约、截图走查和明确未验证边界见[验收记录](acceptance.md)。规格交付了部署配置与发布/回滚流程；本次未进行远端推送、生产部署、集群CNI/Nacos演练或远端GitHub Actions验证。

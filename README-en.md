@@ -76,7 +76,7 @@ AI_FORGE_SOURCE=/path/to/saas-forge bash scripts/check-fullstack.sh
 
 Use `AI_MAVEN_OFFLINE=true` for cached offline validation and `AI_MAVEN_REPOSITORY` for a private dependency directory. Platform acceptance requires three real executable jars and fails if they are absent. [CI documentation](docs/ci.md) distinguishes published SDK, project, platform integration and complete Shell gates.
 
-Full-stack tests use real Shell, IAM PKCE, Gateway, AI, Node DSH, DB/Redis/MQ. Only model/external MCP boundaries use deterministic local HTTPS servers, without production keys or billable calls. Playwright covers login, conversations, incremental streaming, approval, history, deletion, authorization and tenant isolation at widths of 1440 and 1024, and verifies actual usage/platform reports. Artifacts default to `ai-service/target/fullstack`; set `AI_E2E_OUTPUT` to place screenshots/logs under `/tmp`.
+Full-stack tests use real Shell, IAM PKCE, Gateway, AI, Node DSH, DB/Redis/MQ. Only model/external MCP boundaries use deterministic local HTTPS servers, without production keys or billable calls. Playwright covers login, conversations, incremental streaming, approval, history, deletion, authorization and tenant isolation at widths of 1440 and 1024. It confirms partial output is visible before completion and verifies actual usage/platform reports. Artifacts default to `ai-service/target/fullstack`; set `AI_E2E_OUTPUT` to place screenshots/logs under `/tmp`.
 
 ## Deployment and operations
 

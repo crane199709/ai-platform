@@ -12,6 +12,8 @@ Runner 每租户独立 DSH 子进程、0700 home/workspace、0600 profile，默�
 
 Runner进程不继承模型/MCP密钥、用户JWT或用户home。只读官方profile禁用shell/FS/Web/插件安装等执行面，允许已审核Skill和AI代理工具；不是允许执行任意模型生成命令的通用沙箱。容器以非root、只读根文件系统、drop ALL、RuntimeDefault seccomp运行，home位于临时卷。
 
+固定官方native加载器会校验已打包二进制并复制到TMPDIR私有缓存后加载；对应临时卷须允许动态库的可执行映射。K8s emptyDir保持该行为；本地Docker验收为`/runtime`和`/tmp`显式配置`exec,nosuid`，避免Docker tmpfs默认`noexec`阻断初始化。该要求只支持已打包native依赖，模型可用工具仍由受限profile与Java授权代理控制。
+
 ## 配置与凭据
 
 完整环境项见 [AI示例](../ai-service/.env.example)、[Runner示例](../runner/.env.example) 和 [K8s配置](../deploy/kubernetes/config.yaml)。地址、issuer、schema、业务时区和凭证必须来自目标环境，`example.invalid`与`REPLACE_*`不可直接部署。

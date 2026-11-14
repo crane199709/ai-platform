@@ -26,6 +26,8 @@ AI_E2E_OUTPUT=/tmp/ai-fullstack \
 
 默认两宽1440/1024，Chromium。产物包含真实Shell截图、Playwright报告/失败trace、公开用量与聚合指标；不要上传生成的TLS私钥、p12或生产Secret。Browser plugin not available，因此使用仓库现有Playwright。mocked TenantClient/DevHost的交互和视觉用例是局部验证，不能替代该门禁。
 
+普通回答的本地提供方发出首段后等待浏览器确认；用例先断言部分正文与取消入口可见、完整回答尚未出现，再释放后半段和结束帧。这样可检测中间代理缓冲整段响应的问题。无授权租户的负向阶段仅允许已关联真实403响应的三个AI读取路径产生预期网络日志，其余控制台错误仍失败；对应路径保存在`browser-*.json`，不会一概忽略403。
+
 `.github/workflows/fullstack.yml`提供手动与可复用的**完整发布门禁**：输入准确40位`forge_ref`，从`crane199709/saas-forge`检出同一源码，构建完整配套SDK/运行包到任务私有Maven目录，用`-nsu`补齐AI公开依赖后离线固定该分发，再串行运行all→platform→真实Shell→本地镜像构建，不push。此运行分发前提独立于常规“发布SDK消费”门禁；平台应用jar并非公开Maven SDK制品。镜像构建的BuildKit元数据（含manifest digest）保存到`target/images/*.json`，随验收产物上传；本地image ID与manifest digest分别记录。
 
 本次本地平台基线`d7a27a63d6d3a52a724f85bc5a0d5f1a825bcbd5`尚未push，后端与`0647e0f1e1539f4882ee430a95d09f32f5ef909b`一致；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。

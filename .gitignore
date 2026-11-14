@@ -11,3 +11,5 @@ playwright-report/
 *.log
 .DS_Store
 .flattened-pom.xml
+
+.runtime-source/

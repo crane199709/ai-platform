@@ -4,7 +4,7 @@
 
 **Blocked by:** 05, 06, 07, 08, 09, 10
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Playwright 主链路：登录 → 进入 AI 工作台 → 建会话 → 发消息 → 看到流式回答 → 刷新恢复 → 删除会话
 - [ ] 权限与租户隔离 E2E：无权限不可见、切租户不串数据

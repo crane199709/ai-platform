@@ -1,27 +1,37 @@
-# 构建与跨仓验收
+# 构建与验收
 
-Java 使用已发布的 `io.saasforge:*:0.2.0-SNAPSHOT`，ai-service/pom.xml 继承 Forge BOM。CI 不检出平台源码、不运行平台 reactor install。
+## 常规CI
 
-`AI platform integration` 在 main 推送、PR、手动触发及每日北京时间 10:45（UTC 02:45）运行。service、runner、sub-app 三个 job 分别验证同一提交；统一入口为 `bash scripts/check.sh`，可指定单个子工程。
+`.github/workflows/ci.yml`在PR、main push、每日定时和手动触发时分别验证：
 
-## 已发布 SDK
+- Java：从GitHub Packages消费发布的Forge SDK快照，使用临时Maven目录排除本机Forge缓存，执行verify、架构、schema注释/SDK表、格式和权限目录门禁。
+- Runner：固定Node24.14.1/pnpm12.4.2、frozen lockfile、严格类型检查、构建与真实`@deepseek-ai/dsh@0.2.2-rc.1` HTTP契约。覆盖初始化、分批流、工具/Skill、取消、崩溃、恢复、导出、准入、隔离和池回收。没有生产模型Key或计费调用。
+- Sub-App：Vitest、格式、隔离/style/type/build与Playwright。Linux CI执行交互用例但忽略跨平台PNG像素比较；本地固定平台保留提交的视觉基线并逐张查看。
 
-service job 的 `scripts/verify-published-sdk.sh` 创建临时 Maven 缓存，只复用第三方依赖，排除全部 io.saasforge 制品；以 -U 从 GitHub Maven Packages 解析快照后运行 service 的完整 verify。失败不会退回本地 SDK 或源码安装。GITHUB_TOKEN 仅在该 job 以 packages:read 读取公开平台包。
+`bash scripts/check.sh all`统一调用三套门禁；也可指定`service|runner|sub-app`。`AI_MAVEN_OFFLINE=true`使用已有依赖，`AI_MAVEN_REPOSITORY=/path/to/m2`指定隔离库。新增依赖需先在可联网环境补齐；不要改共享Maven里的Forge制品。
 
-`PlatformSnapshotContractTest` 验证 AI Manifest、角色模板、Sub-App 编码，以及 TenantPlanChanged 的 tokenQuota 和历史 JSON 兼容。`HttpContractTest` 验证健康检查、401 信封和 OpenAPI；SchemaCommentTest 验证 SDK 必需表、独立 ai schema 与受限双账号；ArchitectureTest 检查共享架构规则。
+## 真实平台与完整Shell门禁
 
-工单 02 另提供 `bash scripts/check.sh platform`：通过 `AI_FORGE_RUNTIME_REPOSITORY` 指定真实平台运行 jar 的 Maven 布局目录，启动隔离 PostgreSQL/Redis/RocketMQ 和 IAM/Platform/Gateway，验证登录、权限、跨租户、审计及 App Registry 同步。此入口不包含在常规 `all` 或远端 SDK job 中；平台应用 jar 未发布到 Maven Packages。运行方式与验证边界见 [平台接入](../deploy/README.md#隔离平台验收)。测试类为 `PlatformIntegrationIT`，缺少依赖时直接失败。
+`bash scripts/check.sh platform`需要Docker和`AI_FORGE_RUNTIME_REPOSITORY`中的真实IAM/Platform/Gateway `0.2.0-SNAPSHOT`可执行jar。它通过随机端口和临时PostgreSQL/Redis/RocketMQ运行HTTP/MQ验收，无平台实现类依赖、不跳过缺失制品。测试产物SHA与日志在`ai-service/target/platform-it`。
 
-本地在线验证设置 FORGE_MAVEN_USERNAME 与 FORGE_MAVEN_TOKEN（读取 Maven 包的凭据），然后运行 `bash scripts/verify-published-sdk.sh`。settings.xml 只引用环境变量，不保存明文凭据。普通离线迭代可在已有匹配 SDK 缓存时使用 `AI_MAVEN_OFFLINE=true bash scripts/check.sh service`；离线结果不作为跨仓发布验收证据。
+`bash scripts/check-fullstack.sh`（或`check.sh fullstack`）额外需要`AI_FORGE_SOURCE`指向配套SaaS Forge源码/已安装前端workspace依赖，构建并运行真正的`frontend/apps/tenant-app` Shell。测试经App Registry/Module Federation加载AI远程模块，真实IAM登录/PKCE、Gateway、AI、Runner/DSH、审批、持久化与用量回传贯通。仅模型/外部MCP边界使用本地确定性HTTPS。测试TLS信任只通过测试JVM truststore，不弱化主代码HTTPS、Secret allowlist或授权链。
 
-平台每日 10:00 的 SDK 发布由 saas-forge 仓库执行，本仓库 10:45 消费当时可读的最新快照。一次运行的下载日志、代码提交和测试报告是对应证据；定时配置不是未来每天一定成功的承诺。
+```bash
+AI_MAVEN_REPOSITORY=/private/path/runtime-m2 \
+AI_FORGE_RUNTIME_REPOSITORY=/private/path/runtime-m2 \
+AI_FORGE_SOURCE=/path/to/saas-forge \
+AI_E2E_OUTPUT=/tmp/ai-fullstack \
+  bash scripts/check-fullstack.sh
+```
 
-## Node 与 Vue
+默认两宽1440/1024，Chromium。产物包含真实Shell截图、Playwright报告/失败trace、公开用量与聚合指标；不要上传生成的TLS私钥、p12或生产Secret。Browser plugin not available，因此使用仓库现有Playwright。mocked TenantClient/DevHost的交互和视觉用例是局部验证，不能替代该门禁。
 
-runner job 运行 TypeScript 类型检查、编译和真实 HTTP 存活测试，不连接模型。sub-app job 校验隔离、样式、类型、构建及 Playwright 页面行为。Linux CI 跳过 macOS 像素基线比对，交互断言继续运行；本机生成并查看 1440/1024 两档截图后提交基线。
+`.github/workflows/fullstack.yml`提供手动与可复用的**完整发布门禁**：输入准确40位`forge_ref`，从`crane199709/saas-forge`检出同一源码，构建到任务私有Maven目录，再串行运行all→platform→真实Shell→本地镜像构建，不push。此运行分发前提独立于常规“发布SDK消费”门禁；平台应用jar并非公开Maven SDK制品。
 
-前端三个 0.2.0-SNAPSHOT tarball 固定在 `.forge-packages/`，来源与升级方式见该目录 README；pnpm-lock.yaml 固定第三方依赖。这些文件用于前端配套版本，Java 的已发布快照仍必须通过远端 Maven 仓库验收。
+本次本地平台基线`d7a27a63d6d3a52a724f85bc5a0d5f1a825bcbd5`尚未push，后端与`0647e0f1e1539f4882ee430a95d09f32f5ef909b`一致；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。
 
-## 首轮验收
+## 镜像与部署检查
 
-源码提交 `c36f02f` 的[远端运行](https://github.com/crane199709/ai-platform/actions/runs/43558951586)中，三套检查全部通过。Java已从发布仓库下载实际快照并通过5项测试和Manifest动作策略校验，Runner的HTTP测试与Vue的两档页面用例也通过。这是工单00的跨仓消费证据；不代表后续工单的实际业务平台接入已完成。
+`AI_IMAGE_TAG=v0.1.0-g<commit> bash scripts/build-images.sh`把已验收生产jar和根lockfile生成的Runner生产包复制进固定Node/JRE运行镜像，不包含测试源码/fixture，不自动push。tag不能为latest，发布记录还须保存digest与N-1。
+
+`kubectl kustomize deploy/kubernetes`只进行离线渲染；本地容器验证可证明Linux进程、只读根文件系统与cgroup参数，不能证明目标CNI、Ingress/出口、Nacos或生产容量。参见[部署指南](deployment.md)。完整平台fixture按串行运行，避免有限Docker资源上同时启动多套MQ。

@@ -80,3 +80,17 @@ ai:
   mcp:
     trusted-business-origins: ${AI_MCP_TRUSTED_BUSINESS_ORIGINS:}
     secret-references: ${AI_MCP_SECRET_REFERENCES:}
+
+# 独立内网端口；不可通过 Gateway 发布。NetworkPolicy 只准监控采集器访问。
+management:
+  server:
+    port: ${AI_MANAGEMENT_PORT:9090}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

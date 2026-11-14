@@ -43,3 +43,7 @@ ai:
     service-token: test-runner-service-token
   model-proxy:
     secret-references: [CONVERSATION_TEST_KEY]
+
+management:
+  server:
+    port: ${server.port}

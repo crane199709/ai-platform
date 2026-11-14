@@ -1,0 +1,45 @@
+# 对接环境须将 forge-system / observability 与 pod labels 映射为实际值。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: ai-runner-isolation}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: ai-runner}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: ai-service}}
+      ports: [{protocol: TCP, port: 8181}]
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports: [{protocol: TCP, port: 9091}]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: ai-service}}
+      ports: [{protocol: TCP, port: 8086}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: ai-service-ingress}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: ai-service}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: ai-runner}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: forge-system}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: forge-gateway}}
+        # Platform 运维读取 /internal/onboarding-status，仍需独立Ops Token。
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: forge-system}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: forge-platform}}
+      ports: [{protocol: TCP, port: 8086}]
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+      ports: [{protocol: TCP, port: 9090}]

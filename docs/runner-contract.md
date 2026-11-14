@@ -119,3 +119,11 @@ JSON 错误体是 `{ "code": "runner.*", "retryable": false/true }`。SSE 开始
 消息请求可选 `tools` 使用与建会话完全相同的严格只读工具结构、去重、最多32项与1MiB总body约束；省略时沿用该Runner会话已保存声明，显式 `[]` 撤下全部工具。Java每回合均带当前重新授权的tools，避免重复create返回409后沿用过期声明。Runner在发起回合前更新session.tools并走原model/tools/instructions/skills fingerprint初始化，配置变化重建该租户进程并重放上下文；不会清除产品历史，也不更新已保存的Java历史快照。此接缝只同步工具声明；失败后DB-authoritative单会话恢复由工单11负责，不能据此宣称create409已同步transcript。
 
 部署升级须先发布支持消息 `tools` 的 Runner，再发布始终发送该字段的 Java AI 服务；旧 Runner 的严格未知字段校验会拒绝新调用。已有 Runner 调用者可继续省略该字段。
+
+## 工单12部署与指标
+
+Runner运行端口默认8181，`/health`存活、`/ready`检查固定proxy/root配置，运行接口仍全部要求服务令牌。新增受保护`GET /metrics`仅返回实例级process/pool聚合，不含tenant/PID/内容。可选`AI_RUNNER_MANAGEMENT_PORT=9091`提供独立只读`GET /metrics`，其他路径和方法404；该端口只准内网采集器，监控无需Runner服务令牌，也不能调用运行/导出接口。K8s运行端口只准AI服务，指标端口只准指定监控namespace/pod。
+
+指标`ai_runner_processes`只计存活DSH进程；`ai_runner_pool_tenants`是保留的租户槽数，可能包含尚无进程的会话；`ai_runner_busy_tenants`包含准入/执行/停止状态；`ai_runner_pool_capacity`为当前实例上限。四项均无租户标签。部署资源、单实例限制、镜像和回滚见[部署指南](deployment.md)。
+
+工单11会话恢复协议的发布顺序：先部署支持建会话`replace?:boolean`、单会话DELETE、工具事件`attemptId`的Runner，再部署依赖它的Java。`replace:true`忙时拒绝，只原子替换目标session的DB权威快照，其他会话保留；普通create重复仍精确409 `runner.sessionExists`。Runner专属root使用`.ai-platform-runner`所有权标记，只清理已认领root的租户进程残留，已有非空无标记目录拒绝启动；K8s专属emptyDir无需接管旧用户目录。

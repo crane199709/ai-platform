@@ -1,0 +1,18 @@
+groups:
+  - name: ai-platform
+    rules:
+      - alert: AiHighServerErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{job="ai-service",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{job="ai-service"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "AI HTTP 5xx rate exceeds 5%"}
+      - alert: AiRunnerPoolSaturated
+        expr: ai_runner_pool_tenants / ai_runner_pool_capacity >= 1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Runner tenant pool has no free slot"}
+      - alert: AiConversationFailures
+        expr: sum(rate(ai_conversation_turns_total{status="ERROR"}[5m])) > 0.1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "AI turns are failing after SSE starts"}

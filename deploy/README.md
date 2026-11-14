@@ -1,12 +1,12 @@
 # 平台接入
 
-工单 02 提供 AI 服务的 SDK 接入、配置片段与隔离平台验收。镜像、网络策略和完整产品部署由工单 12 交付。共享环境操作由对应管理员确认目标后执行；本仓库不自动改写已有平台的数据库、Nacos 或授权配置。
+工单 02 提供 AI 服务的 SDK 接入、配置片段与隔离平台验收。镜像、网络策略和完整产品部署见[部署指南](../docs/deployment.md)。共享环境操作由对应管理员确认目标后执行；本仓库不自动改写已有平台的数据库、Nacos 或授权配置。
 
 ## 数据库
 
 使用 `forge` 库的独立 `ai` schema。`ai_migrator` 持有 schema 并执行 Flyway；`ai_app` 仅持有数据读写与序列权限。两者均无超级用户、BYPASSRLS、建库或建角色权限。[provision-service.sql](postgres/lib/provision-service.sql) 供测试与部署共用。
 
-管理员先在目标库安装共享的 `extensions.ltree`，收回 PUBLIC 对数据库及 schema 的不必要权限，再执行：
+管理员先在目标库安装共享的 `extensions.ltree` 与 `extensions.pg_trgm`，收回 PUBLIC 对数据库及 schema 的不必要权限，再执行：
 
 ```bash
 # PGHOST、PGPORT、PGDATABASE=forge、PGUSER、PGPASSFILE 由目标环境提供。
@@ -23,8 +23,8 @@ psql -X -v service=ai \
 
 ## 服务身份、网关与任务
 
-1. Operator 在平台控制台按服务名 `ai-service` 登记 Service Credential，一次性明文注入 `FORGE_MANIFEST_TOKEN`；`FORGE_IAM_URI` 使用 IAM 内网地址。Manifest 版本为 2，声明工作台菜单、`ai:conversation:use`、`ai:configuration:manage` 与 `ai-user` / `ai-admin` 模板。后续发布与回滚权限随对应工单细化。
-2. 独立 Ops Token 注入 `FORGE_OPS_TOKEN`，并在 Platform 的 `forge.platform.ops.tokens.ai-service` 配置相同秘密，不复用 Manifest 凭证。正确 Ops Token 可直连读取 `/internal/onboarding-status`；`phase=REPORTED`、`reportedVersion=2` 表示本实例上报成功。Service Credential 读取该端点应返回 401。
+1. Operator 在平台控制台按服务名 `ai-service` 登记 Service Credential，一次性明文注入 `FORGE_MANIFEST_TOKEN`；`FORGE_IAM_URI` 使用 IAM 内网地址。Manifest 版本以当前 application.yml 为准（当前为 8），声明工作台菜单、`ai:conversation:use`、`ai:configuration:manage` 与 `ai-user` / `ai-admin` 模板。后续发布与回滚权限随对应工单细化。
+2. 独立 Ops Token 注入 `FORGE_OPS_TOKEN`，并在 Platform 的 `forge.platform.ops.tokens.ai-service` 配置相同秘密，不复用 Manifest 凭证。正确 Ops Token 可直连读取 `/internal/onboarding-status`；`phase=REPORTED`、`reportedVersion=8` 表示本实例上报成功。Service Credential 读取该端点应返回 401。
 3. 将 [forge-gateway.yaml](forge-gateway.yaml) 的 AI 路由和 Realm 前缀**追加合并**到已有 Nacos 配置，保留其他服务。服务通过 Nacos 以 `ai-service` 注册。网关剥离 `/ai`：外部 `/ai/context` 对应服务 `/context`；浏览器 SDK 请求 `/api/ai/context`，Shell 剥离 `/api`。
 4. 合并 [forge-platform.yaml](forge-platform.yaml) 的 Ops 映射与初始化服务名单，保留现有条目。`AI_SERVICE_OPS_TOKEN` 与 AI 服务的 `FORGE_OPS_TOKEN` 来自同一秘密。
 5. 建立 `forge-tenant`、`forge-app`、`forge-audit` Topic，注入 RocketMQ proxy gRPC 地址和 Redis 配置。Provisioning 与 Audit 使用 SDK Outbox；Scheduling 已接入并复用 IAM 地址与 Service Credential，后续任务使用 `@TenantTask` / `@GlobalTask`。
@@ -62,7 +62,7 @@ AI_FORGE_RUNTIME_REPOSITORY="$HOME/.m2/repository" \
 
 隔离测试关闭 Nacos，以交付的路由配置直连随机端口，不验证共享环境的 Nacos 发布或服务发现。常规三工程 CI 不要求平台运行分发，远端 SDK 消费与隔离平台验收分别记录。
 
-Runner 仍需 Node 24，仅提供内网 GET `/health`。模型密钥、MCP 凭据、DSH 和聊天能力由后续工单接入，本阶段不使用模型密钥。
+Runner 使用固定 Node 24.14.1 与 DSH 0.2.2-rc.1，内网运行、探针和独立聚合指标见[Runner 契约](../docs/runner-contract.md)。完整会话、MCP 代理与用量已交付；原始密钥只注入 AI 服务。
 
 ## 模型目录接入（工单 06）
 

@@ -33,10 +33,13 @@ case "$component" in
       pnpm --filter @forge/ai-sub-app test:visual
     fi
     ;;
+  fullstack)
+    bash scripts/check-fullstack.sh
+    ;;
   all)
     bash scripts/check.sh service
     bash scripts/check.sh runner
     bash scripts/check.sh sub-app
     ;;
-  *) echo 'Usage: scripts/check.sh [all|service|runner|sub-app|platform]' >&2; exit 1 ;;
+  *) echo 'Usage: scripts/check.sh [all|service|runner|sub-app|platform|fullstack]' >&2; exit 1 ;;
 esac

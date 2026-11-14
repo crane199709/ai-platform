@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/dist
+**/target
+!ai-service/target
+!ai-service/target/ai-service-0.1.0-SNAPSHOT.jar
+**/.env*
+**/*.pem
+**/*.jwk
+**/*.log
+.scratch
+!runner/target
+!runner/target/image
+!runner/target/image/**
+
+.runtime-source

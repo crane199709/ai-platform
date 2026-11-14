@@ -22,7 +22,7 @@ export interface RunnerOptions {
   maxTenants?: number
   idleTimeoutMs?: number
 }
-export type RunnerServer = Server & { closeRuntime(): Promise<void> }
+export type RunnerServer = Server & { closeRuntime(): Promise<void>; metrics(): string }
 export function createRunnerServer(options: RunnerOptions): RunnerServer {
   if (!options.serviceToken) throw new Error('AI_RUNNER_SERVICE_TOKEN is required')
   if (options.proxyUrl) {
@@ -79,10 +79,19 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
         json(200, { status: 'ok' })
         return
       }
+      if (request.method === 'GET' && request.url === '/ready') {
+        const ready = Boolean(options.proxyUrl && options.rootDir)
+        json(ready ? 200 : 503, { status: ready ? 'ready' : 'notConfigured' })
+        return
+      }
       const provided = Buffer.from(request.headers.authorization ?? '')
       const expected = Buffer.from(`Bearer ${options.serviceToken}`)
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
         json(401, { code: 'runner.unauthorized', retryable: false })
+        return
+      }
+      if (request.method === 'GET' && request.url === '/metrics') {
+        response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' }).end(server.metrics())
         return
       }
       if (request.method === 'GET' && request.url === '/v1/runtime') {
@@ -239,6 +248,24 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
       } else response.end()
     })
   }) as RunnerServer
+  server.metrics = () => {
+    const workers = [...tenants.values()].map((runtime) => runtime.diagnostics)
+    return [
+      '# HELP ai_runner_processes Live tenant DSH processes.',
+      '# TYPE ai_runner_processes gauge',
+      `ai_runner_processes ${workers.filter((worker) => worker.processId !== undefined).length}`,
+      '# HELP ai_runner_pool_tenants Tenant slots retained in this instance.',
+      '# TYPE ai_runner_pool_tenants gauge',
+      `ai_runner_pool_tenants ${tenants.size}`,
+      '# HELP ai_runner_pool_capacity Maximum tenant slots in this instance.',
+      '# TYPE ai_runner_pool_capacity gauge',
+      `ai_runner_pool_capacity ${maxTenants}`,
+      '# HELP ai_runner_busy_tenants Tenant slots admitting or executing a turn.',
+      '# TYPE ai_runner_busy_tenants gauge',
+      `ai_runner_busy_tenants ${workers.filter((worker) => worker.state === 'busy').length}`,
+      '',
+    ].join('\n')
+  }
   server.closeRuntime = async () => {
     clearInterval(reaper)
     await Promise.all([...tenants.values()].map((runtime) => runtime.close()))
@@ -386,5 +413,16 @@ function parseSkills(value: unknown): SkillSnapshot[] {
       version: skill.version,
       content: skill.content,
     }
+  })
+}
+
+/** 独立内网指标端口不提供运行接口；网络策略只准采集器访问。 */
+export function createRunnerMetricsServer(runner: RunnerServer): Server {
+  return createServer((request, response) => {
+    if (request.method !== 'GET' || request.url !== '/metrics') {
+      response.writeHead(404).end()
+      return
+    }
+    response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' }).end(runner.metrics())
   })
 }

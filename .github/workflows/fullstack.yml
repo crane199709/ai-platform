@@ -1,0 +1,91 @@
+name: Real Shell integration and release gate
+on:
+  workflow_dispatch:
+    inputs:
+      forge_ref:
+        description: Published exact 40-character saas-forge source SHA matching the runtime contract
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      forge_ref:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  fullstack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require an immutable platform source
+        env:
+          FORGE_REF: ${{ inputs.forge_ref }}
+        run: test "${#FORGE_REF}" -eq 40 && [[ "$FORGE_REF" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          repository: crane199709/saas-forge
+          ref: ${{ inputs.forge_ref }}
+          path: .runtime-source/saas-forge
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @forge/ai-sub-app exec playwright install --with-deps chromium
+      - name: Prepare private Forge runtime and frontend dependencies
+        run: |
+          export AI_MAVEN_REPOSITORY="$RUNNER_TEMP/ai-runtime-m2"
+          cd .runtime-source/saas-forge/backend
+          ./mvnw --batch-mode "-Dmaven.repo.local=$AI_MAVEN_REPOSITORY" -DskipTests -pl forge-iam,forge-platform,forge-gateway,forge-architecture -am install
+          cd ../frontend
+          pnpm install --frozen-lockfile
+      - name: DSH fixed-version contract and three-project gate
+        env:
+          AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+        run: bash scripts/check.sh all
+      - name: Real IAM, Gateway, MQ and platform usage contract
+        env:
+          AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+          AI_FORGE_RUNTIME_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+        run: bash scripts/check.sh platform
+      - name: Real Shell full-stack gate
+        env:
+          AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+          AI_FORGE_RUNTIME_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+          AI_FORGE_SOURCE: ${{ github.workspace }}/.runtime-source/saas-forge
+          AI_E2E_OUTPUT: ${{ runner.temp }}/ai-fullstack
+        run: bash scripts/check-fullstack.sh
+      - name: Build immutable local images (no push)
+        env:
+          AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
+          AI_IMAGE_TAG: v0.1.0-g${{ github.sha }}
+        run: bash scripts/build-images.sh
+      - name: Real DSH in the Linux Runner image
+        env:
+          AI_RUNNER_IMAGE: ai-platform/runner:v0.1.0-g${{ github.sha }}
+          AI_IMAGE_EVIDENCE: ${{ runner.temp }}/ai-fullstack/runner-image.json
+        run: node scripts/check-runner-image.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-shell-evidence
+          path: |
+            ${{ runner.temp }}/ai-fullstack/*.png
+            ${{ runner.temp }}/ai-fullstack/*.json
+            ${{ runner.temp }}/ai-fullstack/*.log
+            ${{ runner.temp }}/ai-fullstack/*.prom
+            ai-service/target/platform-it/*.sha256
+            ai-service/target/platform-it/*.log
+            ai-service/target/surefire-reports/
+          retention-days: 7

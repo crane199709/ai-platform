@@ -1,0 +1,12 @@
+# 合并进内网Prometheus；无需持有用户Token或Runner服务令牌。
+scrape_configs:
+  - job_name: ai-service
+    metrics_path: /actuator/prometheus
+    scrape_interval: 15s
+    static_configs:
+      - targets: [ai-service.ai-platform.svc:9090]
+  - job_name: ai-runner
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: [ai-runner.ai-platform.svc:9091]

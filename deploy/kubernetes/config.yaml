@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+data:
+  FORGE_SERVICE_PORT: "8086"
+  AI_MANAGEMENT_PORT: "9090"
+  FORGE_NACOS_ADDR: "nacos.forge-system.svc:8848"
+  FORGE_DB_URL: "jdbc:postgresql://postgres.forge-system.svc:5432/forge?currentSchema=ai,extensions"
+  FORGE_DB_SCHEMA: ai
+  FORGE_DB_USER: ai_app
+  FORGE_DB_MIGRATOR_USER: ai_migrator
+  FORGE_REDIS_HOST: redis.forge-system.svc
+  FORGE_REDIS_PORT: "6379"
+  FORGE_ROCKETMQ_ENDPOINTS: "rocketmq-proxy.forge-system.svc:8081"
+  FORGE_BUSINESS_ZONE: Asia/Shanghai
+  FORGE_IAM_URI: "http://forge-iam.forge-system.svc:9000"
+  FORGE_SECURITY_ISSUER: "https://gateway.example.invalid/iam"
+  FORGE_SECURITY_JWK_SET_URI: "http://forge-iam.forge-system.svc:9000/oauth2/jwks"
+  FORGE_PLATFORM_SECURITY_ISSUER: "https://gateway.example.invalid/iam/platform"
+  FORGE_PLATFORM_SECURITY_JWK_SET_URI: "http://forge-iam.forge-system.svc:9000/platform/oauth2/jwks"
+  AI_RUNNER_BASE_URI: "http://ai-runner:8181"
+  AI_MODEL_SECRET_REFERENCES: MODEL_DEEPSEEK_API_KEY
+  AI_MCP_SECRET_REFERENCES: ""
+  AI_MCP_TRUSTED_BUSINESS_ORIGINS: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-runner-config
+data:
+  AI_RUNNER_HOST: "0.0.0.0"
+  AI_RUNNER_PORT: "8181"
+  AI_RUNNER_MANAGEMENT_PORT: "9091"
+  AI_SERVICE_PROXY_URL: "http://ai-service:8086/internal/runner"
+  AI_RUNNER_ROOT: /runtime/tenants
+  AI_RUNNER_MAX_TENANTS: "8"
+  AI_RUNNER_IDLE_TIMEOUT_MS: "900000"
+  AI_RUNNER_HEAP_MB: "256"
+  AI_RUNNER_CPU_SECONDS: "120"
+  AI_RUNNER_MAX_TURN_MS: "120000"
+  AI_RUNNER_RPC_TIMEOUT_MS: "15000"

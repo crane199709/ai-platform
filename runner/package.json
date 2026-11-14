@@ -18,5 +18,9 @@
   },
   "engines": {
     "node": ">=24.9.0 <25"
-  }
+  },
+  "files": [
+    "dist/*.js",
+    "!dist/*.test.js"
+  ]
 }

@@ -50,7 +50,7 @@ jobs:
           version: 12.4.2
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.14.1'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: bash scripts/check.sh runner
@@ -66,7 +66,7 @@ jobs:
           version: 12.4.2
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.14.1'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @forge/ai-sub-app exec playwright install --with-deps chromium

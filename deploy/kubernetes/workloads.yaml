@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: ai-service}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ai-service}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 150
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: ai-service
+          image: ai-platform/ai-service:v0.1.0-REPLACE_COMMIT
+          ports:
+            - {name: http, containerPort: 8086}
+            - {name: metrics, containerPort: 9090}
+          envFrom:
+            - configMapRef: {name: ai-service-config}
+            - secretRef: {name: ai-service-secrets}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "2", memory: 1536Mi}
+          startupProbe: {httpGet: {path: /actuator/health/liveness, port: metrics}, periodSeconds: 5, failureThreshold: 60}
+          readinessProbe: {httpGet: {path: /actuator/health/readiness, port: metrics}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /actuator/health/liveness, port: metrics}, periodSeconds: 10}
+          volumeMounts:
+            - {name: temp, mountPath: /tmp}
+      volumes:
+        - name: temp
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-runner
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: ai-runner}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ai-runner}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 150
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: runner
+          image: ai-platform/runner:v0.1.0-REPLACE_COMMIT
+          ports:
+            - {name: http, containerPort: 8181}
+            - {name: metrics, containerPort: 9091}
+          envFrom:
+            - configMapRef: {name: ai-runner-config}
+          env:
+            - name: AI_RUNNER_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: ai-runner-identity, key: AI_RUNNER_SERVICE_TOKEN}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "2", memory: 3Gi}
+          startupProbe: {httpGet: {path: /ready, port: http}, periodSeconds: 3, failureThreshold: 20}
+          readinessProbe: {httpGet: {path: /ready, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          volumeMounts:
+            - {name: runtime, mountPath: /runtime}
+            - {name: temp, mountPath: /tmp}
+      volumes:
+        - name: runtime
+          emptyDir: {sizeLimit: 1Gi}
+        - name: temp
+          emptyDir: {sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ai-service}
+spec:
+  selector: {app.kubernetes.io/name: ai-service}
+  ports:
+    - {name: http, port: 8086, targetPort: http}
+    - {name: metrics, port: 9090, targetPort: metrics}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ai-runner}
+spec:
+  selector: {app.kubernetes.io/name: ai-runner}
+  ports:
+    - {name: http, port: 8181, targetPort: http}
+    - {name: metrics, port: 9091, targetPort: metrics}

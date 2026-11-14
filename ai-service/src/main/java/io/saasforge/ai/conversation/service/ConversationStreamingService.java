@@ -313,6 +313,10 @@ public class ConversationStreamingService {
                     send("token", Map.of("turnId", prepared.turn().getId(), "text", text));
                 }
                 case "tool.call", "tool.result" -> {
+                    if (event.type().equals("tool.call")) {
+                        usage.recordToolCall(
+                                prepared.turn().getId(), data.path("callId").asText());
+                    }
                     var summary = new LinkedHashMap<String, Object>();
                     summary.put("phase", event.type());
                     if (data.has("name")) {

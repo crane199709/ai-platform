@@ -117,6 +117,16 @@ public class UsageLedger extends AuditableEntity {
         estimatedTokens = value;
     }
 
+    private String toolCallIds;
+
+    public String getToolCallIds() {
+        return toolCallIds;
+    }
+
+    public void setToolCallIds(String value) {
+        toolCallIds = value;
+    }
+
     private long toolCalls;
 
     public long getToolCalls() {

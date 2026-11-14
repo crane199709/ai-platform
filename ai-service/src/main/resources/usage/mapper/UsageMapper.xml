@@ -23,7 +23,7 @@
         COALESCE(SUM(CASE WHEN status='FINISHED' THEN output_tokens ELSE 0 END),0) AS output_tokens,
         COALESCE(SUM(CASE WHEN status='FINISHED' THEN cached_input_tokens ELSE 0 END),0) AS cached_input_tokens,
         COALESCE(SUM(estimated_tokens),0) AS estimated_tokens,
-        COUNT(CASE WHEN status='FINISHED' THEN 1 END) AS turn_count,
+        COUNT(*) AS turn_count,
         COALESCE(SUM(tool_calls),0) AS tool_calls,
         COUNT(CASE WHEN unknown_usage THEN 1 END) AS unknown_usage_turns,
         COUNT(CASE WHEN status='RUNNING' THEN 1 END) AS active_turns
@@ -41,7 +41,7 @@
         SELECT #{id},CAST(current_setting('app.tenant_id') AS uuid),#{date},1,
         COALESCE(SUM(input_tokens),0),COALESCE(SUM(output_tokens),0),COALESCE(SUM(cached_input_tokens),0),COALESCE(SUM(estimated_tokens),0),
         COUNT(*),COALESCE(SUM(tool_calls),0),COUNT(CASE WHEN unknown_usage THEN 1 END),CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL
-        FROM ai_usage_ledger WHERE usage_date=#{date} AND status='FINISHED' AND NOT deleted
+        FROM ai_usage_ledger WHERE usage_date=#{date} AND NOT deleted
         ON CONFLICT (tenant_id,usage_date) WHERE NOT deleted DO UPDATE SET snapshot_version=ai_usage_daily.snapshot_version+1,
         input_tokens=EXCLUDED.input_tokens,output_tokens=EXCLUDED.output_tokens,cached_input_tokens=EXCLUDED.cached_input_tokens,
         estimated_tokens=EXCLUDED.estimated_tokens,turn_count=EXCLUDED.turn_count,tool_calls=EXCLUDED.tool_calls,

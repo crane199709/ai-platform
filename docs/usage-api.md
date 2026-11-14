@@ -15,3 +15,7 @@
 日累计事件 `AiUsageDailyReported` 通过现有 `forge-tenant` Topic 投递，字段为 tenantId,usageDate,businessZone,version,inputTokens,outputTokens,cachedInputTokens,turnCount,toolCalls,unknownUsageTurns,estimatedTokens,reportedAt。两仓 JSON 同契约；按 tenant/day 的持久 version 仅接受更新版本，每回合事务发布累计快照，覆盖停用前已提交用量，无需扫描停用租户。
 
 Plan 副本保留公开事件已有的 planId/planCode，并在较新版本 whole-snapshot 更新时与 quota 一起替换；旧/重复版本不能回退任何字段。UsageService.currentPlan() 供其他租户能力只读获取 Optional<UsagePlanSnapshot>；未收到可信事件时 empty，历史缺省身份字段为空且不合成新副本。HTTP响应附带 planId/planCode，既有页面字段保持兼容。工单11可按 planCode 查部署配置，缺省使用90天，不增加SDK字段。
+
+工具调用以 UsageService.recordToolCall(turnId, scopedCallId) 在运行中持久计数；V10 ledger 的 tool_call_ids 仅保存标识 JSON，不保存参数、结果或内容。相同 scopedCallId 的重复 call/result 不重复计数，终态与过期恢复保留已提交次数。准入、模型请求尝试、工具计数和终态各自事务更新当天累计快照与 Outbox；回合数包含已准入且正在运行的回合，执行中的未知 token 以估计占额展示，平台投影不承担实时准入判断。
+
+工单11重试约束：同一 turn 的每次 AgentRuntime 运行必须创建新的 attemptId，并把它加到 callId 前形成 scopedCallId（例如 attemptId + ":" + callId）；提供方不同尝试可能都返回 call_1，不能把它们当同一次工具调用。工单10 v1 单次运行直接使用其 callId；11负责在自动重试入口建立命名空间，不增加SDK字段或新表。AI租户删除仍只需清理原四张用量表；平台投影 TenantAiUsageCleaner 已由10交付。

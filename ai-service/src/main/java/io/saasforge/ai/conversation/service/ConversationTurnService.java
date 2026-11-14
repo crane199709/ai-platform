@@ -22,6 +22,7 @@ import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.TenantContext;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -191,12 +192,15 @@ public class ConversationTurnService {
                 turn.setCachedInputTokens(usage.path("cachedInputTokens").asLong());
             }
         }
-        long toolCount = 0;
+        var toolIds = new HashSet<String>();
+        int legacyIndex = 0;
         for (var item : json.readTree(toolCalls)) {
             if ("tool.call".equals(item.path("phase").asText())) {
-                toolCount++;
+                String callId = item.path("callId").asText();
+                toolIds.add(callId.isBlank() ? "legacy:" + (legacyIndex++) : callId);
             }
         }
+        long toolCount = toolIds.size();
         this.usage.finish(
                 turnId,
                 turn.getInputTokens(),

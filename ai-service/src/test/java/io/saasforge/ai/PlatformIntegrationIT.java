@@ -534,6 +534,7 @@ class PlatformIntegrationIT {
                 .path("data");
         assertThat(recovered.path("activeTurns").asLong()).isZero();
         assertThat(recovered.path("turnCount").asLong()).isEqualTo(2);
+        assertThat(recovered.path("toolCalls").asLong()).isEqualTo(2);
         assertThat(recovered.path("unknownUsageTurns").asLong()).isEqualTo(1);
         assertThat(recovered.path("totalTokens").asLong()).isZero();
         assertThat(recovered.path("estimatedTokens").asLong()).isEqualTo(100);
@@ -545,6 +546,45 @@ class PlatformIntegrationIT {
                         .path("turnCount")
                         .asLong())
                 .isZero();
+    }
+
+    @Test
+    void toolCallsArePersistedBeforeFinishAndDeduplicatedAcrossCallAndResultEvents() throws Exception {
+        var before = usage(tokenA);
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Metered tool", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var future = HttpClient.newHttpClient()
+                .sendAsync(
+                        HttpRequest.newBuilder(URI.create(platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                .header("Authorization", "Bearer " + tokenA)
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString(
+                                        "{\"text\":\"metered tool pause\",\"idempotencyKey\":\"" + UUID.randomUUID()
+                                                + "\"}"))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        try {
+            Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+                var running = usage(tokenA);
+                assertThat(running.path("toolCalls").asLong())
+                        .isEqualTo(before.path("toolCalls").asLong() + 1);
+                assertThat(running.path("activeTurns").asLong()).isEqualTo(1);
+            });
+        } finally {
+            call(platform.gateway(), HttpMethod.POST, "/ai/conversations/" + id + "/cancel", tokenA, null, 200);
+        }
+        assertThat(future.get(10, java.util.concurrent.TimeUnit.SECONDS).body()).contains("CANCELLED");
+        assertThat(usage(tokenA).path("toolCalls").asLong())
+                .isEqualTo(before.path("toolCalls").asLong() + 1);
     }
 
     @Test
@@ -1080,6 +1120,37 @@ class PlatformIntegrationIT {
 
         public void run(Run request, Consumer<Event> emit) {
             requests.add(request);
+            if (request.text().equals("metered tool pause")) {
+                var json = JsonMapper.builder().build();
+                var call = new Event(
+                        "tool.call",
+                        json.valueToTree(
+                                Map.of("name", "lookup", "callId", "call_1", "arguments", "private tool arguments")));
+                emit.accept(call);
+                emit.accept(call);
+                var result = new Event(
+                        "tool.result",
+                        json.valueToTree(Map.of(
+                                "name",
+                                "lookup",
+                                "callId",
+                                "call_1",
+                                "content",
+                                "private tool result",
+                                "isError",
+                                false)));
+                emit.accept(result);
+                emit.accept(result);
+                while (!cancelled.contains(request.session().sessionId())) {
+                    try {
+                        Thread.sleep(20);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                return;
+            }
             if (request.text().equals("pool full before execution")) {
                 throw new ForgeException(io.saasforge.ai.runner.service.RunnerErrorCode.UNAVAILABLE);
             }

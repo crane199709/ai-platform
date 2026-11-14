@@ -64,6 +64,7 @@ CREATE TABLE ai_usage_ledger (
     cached_input_tokens bigint,
     estimated_tokens bigint NOT NULL DEFAULT 0,
     tool_calls bigint NOT NULL DEFAULT 0,
+    tool_call_ids text NOT NULL DEFAULT '[]',
     unknown_usage boolean NOT NULL DEFAULT false,
     outcome varchar(32),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -85,6 +86,7 @@ COMMENT ON COLUMN ai_usage_ledger.input_tokens IS '提供方总输入量，包�
 COMMENT ON COLUMN ai_usage_ledger.output_tokens IS '提供方输出量';
 COMMENT ON COLUMN ai_usage_ledger.cached_input_tokens IS '输入中的缓存子集';
 COMMENT ON COLUMN ai_usage_ledger.estimated_tokens IS '未知用量的独立估计占额';
+COMMENT ON COLUMN ai_usage_ledger.tool_call_ids IS '已经计数的运行尝试作用域工具标识 JSON，不包含参数或结果';
 COMMENT ON COLUMN ai_usage_ledger.tool_calls IS '工具调用次数';
 COMMENT ON COLUMN ai_usage_ledger.unknown_usage IS '已执行但未收到完整提供方用量';
 COMMENT ON COLUMN ai_usage_ledger.outcome IS '完成状态或恢复状态';
@@ -125,7 +127,7 @@ COMMENT ON COLUMN ai_usage_daily.input_tokens IS '已知输入量，包含缓存
 COMMENT ON COLUMN ai_usage_daily.output_tokens IS '已知输出量';
 COMMENT ON COLUMN ai_usage_daily.cached_input_tokens IS '输入中的缓存子集';
 COMMENT ON COLUMN ai_usage_daily.estimated_tokens IS '未知用量的估计占额';
-COMMENT ON COLUMN ai_usage_daily.turn_count IS '已结算回合数';
+COMMENT ON COLUMN ai_usage_daily.turn_count IS '已准入回合数，包含执行中的回合';
 COMMENT ON COLUMN ai_usage_daily.tool_calls IS '工具调用次数';
 COMMENT ON COLUMN ai_usage_daily.unknown_usage_turns IS '用量不完整回合数';
 COMMENT ON COLUMN ai_usage_daily.reported_at IS '快照形成时间';

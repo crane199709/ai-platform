@@ -11,6 +11,8 @@ import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.mq.EventPublisher;
 import io.saasforge.sdk.security.OperatorContext;
 import java.time.*;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -18,9 +20,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class UsageService {
+    private final JsonMapper json = JsonMapper.builder().build();
     private final UsageMapper mapper;
     private final EventPublisher events;
     private final ZoneId zone;
@@ -72,6 +76,7 @@ public class UsageService {
         row.setContextWindow(contextWindow);
         row.setStatus("RUNNING");
         mapper.insert(row);
+        publish(date);
     }
     /** 在鉴权、请求校验之后、首次向提供方发送之前调用；失败是否已产生费用不能确定时仍保守估计。 */
     @Transactional
@@ -86,8 +91,10 @@ public class UsageService {
             throw new ForgeException(UsageErrorCode.NOT_FOUND);
         }
         row.setModelCalls(row.getModelCalls() + 1);
+        row.setUnknownUsage(true);
         row.setEstimatedTokens(Math.addExact(row.getEstimatedTokens(), row.getContextWindow()));
         mapper.updateById(row);
+        publish(row.getUsageDate());
     }
     /** 已经收到模型输出/工具事件也是执行证据；适用于可替换的 AgentRuntime。 */
     @Transactional
@@ -96,6 +103,31 @@ public class UsageService {
         if (row != null && "RUNNING".equals(row.getStatus()) && row.getModelCalls() == 0) {
             modelAttempt(turnId);
         }
+    }
+
+    /** scopedCallId 只含运行尝试命名空间与工具标识；相同调用重送不重复计数。 */
+    @Transactional
+    public void recordToolCall(UUID turnId, String scopedCallId) {
+        if (scopedCallId == null || scopedCallId.isBlank() || scopedCallId.length() > 512) {
+            throw new ForgeException(UsageErrorCode.INVALID);
+        }
+        var row = mapper.selectById(turnId);
+        if (row == null) {
+            throw new ForgeException(UsageErrorCode.NOT_FOUND);
+        }
+        lock(row.getBillingMonth());
+        row = mapper.selectById(turnId);
+        if (!"RUNNING".equals(row.getStatus())) {
+            return;
+        }
+        var ids = new LinkedHashSet<>(Arrays.asList(json.readValue(row.getToolCallIds(), String[].class)));
+        if (!ids.add(scopedCallId)) {
+            return;
+        }
+        row.setToolCallIds(json.writeValueAsString(ids));
+        row.setToolCalls(row.getToolCalls() + 1);
+        mapper.updateById(row);
+        publish(row.getUsageDate());
     }
 
     @Transactional
@@ -123,7 +155,7 @@ public class UsageService {
                 && (cached == null || (cached >= 0 && cached <= input));
         row.setStatus("FINISHED");
         row.setOutcome(outcome);
-        row.setToolCalls(tools);
+        row.setToolCalls(Math.max(row.getToolCalls(), tools));
         row.setUnknownUsage(!complete && row.getModelCalls() > 0);
         if (complete) {
             row.setInputTokens(input);

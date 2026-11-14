@@ -4,7 +4,7 @@
 
 **Blocked by:** —
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Plan 增加 `tokenQuota`（nullable，NULL 表示不限）、校验与迁移，`COMMENT ON` 写中文描述
 - [x] `TenantPlanChanged` 增加 token 配额字段，随事件下发；现有订阅方保持兼容

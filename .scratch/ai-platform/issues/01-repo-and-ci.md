@@ -4,7 +4,7 @@
 
 **Blocked by:** —
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] 仓库包含 `ai-service/`、`runner/`、`ai-sub-app/`、`deploy/`、`docs/`
 - [x] Java 服务可构建、可测试；Node runner 可构建、可测试；Sub-App 可构建

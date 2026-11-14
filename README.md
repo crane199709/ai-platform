@@ -84,10 +84,11 @@ AI_FORGE_SOURCE=/path/to/saas-forge bash scripts/check-fullstack.sh
 
 ```bash
 AI_IMAGE_TAG=v0.1.0-g<commit> bash scripts/build-images.sh
+AI_RUNNER_IMAGE=ai-platform/runner:v0.1.0-g<commit> node scripts/check-runner-image.mjs
 kubectl kustomize deploy/kubernetes > /tmp/ai-platform.yaml
 ```
 
-镜像构建不push、不apply现有集群。Runner的256MiB是每进程V8堆限制；容器RSS/CPU是整个池的总限额。NetworkPolicy需要目标CNI实际验证，静态渲染不能证明网络隔离已生效。
+镜像构建不push、不apply现有集群。`AI_RUNNER_ARCH=arm64|x64`指定Linux/musl目标，BuildKit元数据与manifest digest保存在`target/images/`；镜像契约验证实际DSH初始化、流式回合与容器资源约束。Runner的256MiB是每进程V8堆限制；容器RSS/CPU是整个池的总限额。NetworkPolicy需要目标CNI实际验证，静态渲染不能证明网络隔离已生效。
 
 ## 文档
 

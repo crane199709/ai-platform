@@ -58,7 +58,7 @@ AI_RUNNER_IMAGE=ai-platform/runner:v0.1.0-g<commit> node scripts/check-runner-im
 kubectl kustomize deploy/kubernetes > /tmp/ai-platform.yaml
 ```
 
-Node固定24.14.1，pnpm12.4.2，DSH固定`0.2.2-rc.1`及根lockfile integrity。镜像脚本以`AI_RUNNER_ARCH=arm64|x64`（默认当前Node架构）生成匹配Linux/musl的pnpm生产包，并固定Docker目标platform；不能把macOS/glibc可选native包直接复制到Alpine。生产镜像只复制生产jar或Runner运行代码，不带test-classes、FakeAgentRuntime、TLS fixture、测试Key或浏览器夹具。`build-images.sh`仅构建本机镜像，不push；Sub-App静态产物随同一版本发布，remoteEntry保持短缓存、带hash资源长期缓存。记录Git SHA、SDK/平台准确ref、DSH版本、镜像digest和前一版本digest，不使用`latest`。
+Node固定24.14.1，pnpm12.4.2，DSH固定`0.2.2-rc.1`及根lockfile integrity。镜像脚本以`AI_RUNNER_ARCH=arm64|x64`（默认当前Node架构）生成匹配Linux/musl的pnpm生产包，并固定Docker目标platform；不能把macOS/glibc可选native包直接复制到Alpine。生产镜像只复制生产jar或Runner运行代码，不带test-classes、FakeAgentRuntime、TLS fixture、测试Key或浏览器夹具。`build-images.sh`仅构建本机镜像，不push；BuildKit元数据及manifest digest保存到`target/images/{ai-service,runner}.json`，终端另输出本地image ID，两者不能混称。Sub-App静态产物随同一版本发布，remoteEntry保持短缓存、带hash资源长期缓存。记录Git SHA、SDK/平台准确ref、DSH版本、镜像digest和前一版本digest，不使用`latest`。
 
 Kustomize先在仓库外overlay替换镜像registry/tag/digest、服务地址、命名空间选择器和pod标签，再由目标环境管理员部署。不要原样apply样例。NetworkPolicy要求CNI实际执行策略：Runner8181只准AI，9091只准observability namespace的Prometheus；Runner egress只准AI8086与集群DNS。AI8086只准Gateway、Platform与Runner，9090只准Prometheus；AI的外部模型/MCP/平台依赖egress由环境出口控制。不存在Runner公网Service或Ingress。探针是kubelet流量，实际CNI/节点策略须在预发布验证。
 

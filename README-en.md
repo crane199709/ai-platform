@@ -62,7 +62,7 @@ pnpm --filter @forge/ai-sub-app start:ai
 Register a browser-accessible `remoteEntry.js` in App Registry, then open `/apps/ai/home` in the matching real Shell. The standalone host from `pnpm --filter @forge/ai-sub-app dev` supports focused UI development; product acceptance uses the full-stack entry below.
 
 > [!NOTE]
-> Inject raw model/MCP keys only into AI service; DB stores allowlisted references. Unknown Plans return503 until a trusted snapshot arrives. Role templates do not include a default MCP DataPolicy: administrators must configure an appropriate `ai_mcp_tool` scope in IAM.
+> Inject raw model/MCP keys only into AI service; DB stores allowlisted references. Unknown Plans return HTTP 503 until a trusted snapshot arrives. Role templates do not include a default MCP DataPolicy: administrators must configure an appropriate `ai_mcp_tool` scope in IAM.
 
 ## Validation
 
@@ -76,7 +76,7 @@ AI_FORGE_SOURCE=/path/to/saas-forge bash scripts/check-fullstack.sh
 
 Use `AI_MAVEN_OFFLINE=true` for cached offline validation and `AI_MAVEN_REPOSITORY` for a private dependency directory. Platform acceptance requires three real executable jars and fails if they are absent. [CI documentation](docs/ci.md) distinguishes published SDK, project, platform integration and complete Shell gates.
 
-Full-stack tests use real Shell, IAM PKCE, Gateway, AI, Node DSH, DB/Redis/MQ. Only model/external MCP boundaries use deterministic local HTTPS servers, without production keys or billable calls. Playwright covers login, conversations, incremental streaming, approval, history, deletion, authorization and tenant isolation at1440/1024 widths, and verifies actual usage/platform reports. Artifacts default to `ai-service/target/fullstack`; set `AI_E2E_OUTPUT` to place screenshots/logs under `/tmp`.
+Full-stack tests use real Shell, IAM PKCE, Gateway, AI, Node DSH, DB/Redis/MQ. Only model/external MCP boundaries use deterministic local HTTPS servers, without production keys or billable calls. Playwright covers login, conversations, incremental streaming, approval, history, deletion, authorization and tenant isolation at widths of 1440 and 1024, and verifies actual usage/platform reports. Artifacts default to `ai-service/target/fullstack`; set `AI_E2E_OUTPUT` to place screenshots/logs under `/tmp`.
 
 ## Deployment and operations
 
@@ -84,10 +84,11 @@ The [deployment guide](docs/deployment.md) covers database extensions/migrations
 
 ```bash
 AI_IMAGE_TAG=v0.1.0-g<commit> bash scripts/build-images.sh
+AI_RUNNER_IMAGE=ai-platform/runner:v0.1.0-g<commit> node scripts/check-runner-image.mjs
 kubectl kustomize deploy/kubernetes > /tmp/ai-platform.yaml
 ```
 
-Image builds do not push or apply to an existing cluster. Runner's256MiB limit is per-process V8 heap; container RSS/CPU limits apply to the whole pool. Target CNI enforcement must be tested; static rendering does not prove network isolation.
+Image builds do not push or apply to an existing cluster. Set `AI_RUNNER_ARCH=arm64|x64` for the Linux/musl target. BuildKit metadata, including manifest digests, is saved under `target/images/`; the image contract exercises real DSH initialization, a streamed turn and container resource limits. Runner's 256 MiB limit is per-process V8 heap; container RSS/CPU limits apply to the whole pool. Target CNI enforcement must be tested; static rendering does not prove network isolation.
 
 ## Documentation
 

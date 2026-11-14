@@ -96,4 +96,5 @@ jobs:
             ai-service/target/platform-it/*.sha256
             ai-service/target/platform-it/*.log
             ai-service/target/surefire-reports/
+            target/images/*.json
           retention-days: 7

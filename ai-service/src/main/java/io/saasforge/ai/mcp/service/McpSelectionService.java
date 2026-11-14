@@ -4,9 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.saasforge.ai.mcp.entity.McpToolGrant;
 import io.saasforge.ai.mcp.mapper.McpToolGrantMapper;
 import io.saasforge.ai.mcp.model.McpToolDefinition;
+import io.saasforge.sdk.abac.DataResourceDefinition;
 import io.saasforge.sdk.abac.data.DataPermission;
+import io.saasforge.sdk.core.MembershipGrants;
 import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.core.api.FrameworkErrorCode;
+import io.saasforge.sdk.manifest.ResourceManifestCollector;
 import io.saasforge.sdk.security.MembershipGrantStore;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -16,6 +19,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Service;
@@ -26,24 +30,25 @@ public class McpSelectionService {
     private final McpCatalogService catalog;
     private final McpConfigurationService configurations;
     private final McpToolGrantMapper resources;
-    private final MembershipGrantStore grants;
-    private final DataPermission data;
+    private final StringRedisTemplate redis;
+    private final List<DataResourceDefinition> definitions;
 
     public McpSelectionService(
             McpCatalogService catalog,
             McpConfigurationService configurations,
             McpToolGrantMapper resources,
-            MembershipGrantStore grants,
-            DataPermission data) {
+            StringRedisTemplate redis) {
         this.catalog = catalog;
         this.configurations = configurations;
         this.resources = resources;
-        this.grants = grants;
-        this.data = data;
+        this.redis = redis;
+        this.definitions = ResourceManifestCollector.dataResources(getClass().getClassLoader()).stream()
+                .map(DataResourceDefinition::of)
+                .toList();
     }
 
     public List<McpToolSnapshot> snapshotForConversation() {
-        requireIdentity();
+        var access = freshAccess();
         var snapshots = new ArrayList<McpToolSnapshot>();
         var enabled = catalog.available().stream().map(c -> c.id()).toList();
         for (var row : configurations.publishedRows()) {
@@ -55,6 +60,7 @@ public class McpSelectionService {
                 continue;
             }
             var config = catalog.published(row.getCatalogId(), current.getCatalogVersion());
+            var liveConfig = catalog.published(row.getCatalogId(), catalog.currentVersion(row.getCatalogId()));
             for (var resource : resources.selectList(new LambdaQueryWrapper<McpToolGrant>()
                     .eq(McpToolGrant::getCatalogId, row.getCatalogId())
                     .eq(McpToolGrant::getTenantVersion, current.getVersion()))) {
@@ -62,9 +68,18 @@ public class McpSelectionService {
                         .filter(t -> t.name().equals(resource.getToolName()))
                         .findFirst()
                         .orElseThrow(() -> new ForgeException(McpErrorCode.UNAVAILABLE));
-                if (authorized(resource, tool)) {
-                    snapshots.add(
-                            snapshot(row.getCatalogId(), current.getCatalogVersion(), current.getVersion(), tool));
+                var liveTool = liveConfig.tools().stream()
+                        .filter(t -> t.name().equals(tool.name()))
+                        .findFirst()
+                        .orElse(null);
+                if (liveTool != null && authorized(resource, tool, access) && authorized(resource, liveTool, access)) {
+                    snapshots.add(snapshot(
+                            row.getCatalogId(),
+                            current.getCatalogVersion(),
+                            current.getVersion(),
+                            tool,
+                            Boolean.TRUE.equals(tool.requiresApproval())
+                                    || Boolean.TRUE.equals(liveTool.requiresApproval())));
                 }
             }
         }
@@ -75,11 +90,11 @@ public class McpSelectionService {
     }
 
     public List<McpToolSnapshot> authorizeSnapshots(List<McpToolSnapshot> snapshots) {
-        requireIdentity();
+        var access = freshAccess();
         var allowed = new ArrayList<McpToolSnapshot>();
         for (var snapshot : snapshots) {
             try {
-                allowed.add(resolve(snapshot.runtimeName()));
+                allowed.add(resolve(snapshot.runtimeName(), access));
             } catch (ForgeException error) {
                 if (error.errorCode().httpStatus() != 403
                         && error.errorCode().httpStatus() != 404
@@ -92,7 +107,10 @@ public class McpSelectionService {
     }
 
     public McpToolSnapshot resolve(String runtimeName) {
-        requireIdentity();
+        return resolve(runtimeName, freshAccess());
+    }
+
+    private McpToolSnapshot resolve(String runtimeName, Access access) {
         var resource = resources.selectOne(
                 new LambdaQueryWrapper<McpToolGrant>().eq(McpToolGrant::getRuntimeName, runtimeName));
         if (resource == null) {
@@ -117,35 +135,67 @@ public class McpSelectionService {
                 .filter(t -> t.name().equals(resource.getToolName()))
                 .findFirst()
                 .orElseThrow(() -> new ForgeException(McpErrorCode.UNAVAILABLE));
-        if (!authorized(resource, tool)) {
+        var liveTool = catalog.published(id, catalog.currentVersion(id)).tools().stream()
+                .filter(t -> t.name().equals(tool.name()))
+                .findFirst()
+                .orElseThrow(() -> new ForgeException(McpErrorCode.UNAVAILABLE));
+        if (!authorized(resource, tool, access) || !authorized(resource, liveTool, access)) {
             throw new ForgeException(FrameworkErrorCode.AUTH_FORBIDDEN);
         }
-        var snapshot = snapshot(id, catalogVersion, tenantVersion, tool);
+        var snapshot = snapshot(
+                id,
+                catalogVersion,
+                tenantVersion,
+                tool,
+                Boolean.TRUE.equals(tool.requiresApproval()) || Boolean.TRUE.equals(liveTool.requiresApproval()));
         if (!snapshot.runtimeName().equals(runtimeName)) {
             throw new ForgeException(FrameworkErrorCode.AUTH_FORBIDDEN);
         }
         return snapshot;
     }
 
-    private boolean authorized(McpToolGrant resource, McpToolDefinition tool) {
+    private boolean authorized(McpToolGrant resource, McpToolDefinition tool, Access access) {
         return Boolean.TRUE.equals(tool.readOnly())
                 && tool.permission().endsWith(":read")
-                && grants.current().permissions().contains(tool.permission())
-                && data.permits(
-                        "ai_mcp_tool",
-                        Map.of(
-                                "ownerId",
-                                resource.getOwnerId(),
-                                "catalogId",
-                                resource.getCatalogId(),
-                                "toolName",
-                                resource.getToolName()));
+                && access.grants().permissions().contains(tool.permission())
+                && access.data()
+                        .permits(
+                                "ai_mcp_tool",
+                                Map.of(
+                                        "ownerId",
+                                        resource.getOwnerId(),
+                                        "catalogId",
+                                        resource.getCatalogId(),
+                                        "toolName",
+                                        resource.getToolName()));
     }
 
-    private McpToolSnapshot snapshot(UUID id, int catalogVersion, int tenantVersion, McpToolDefinition tool) {
+    private McpToolSnapshot snapshot(
+            UUID id, int catalogVersion, int tenantVersion, McpToolDefinition tool, boolean requiresApproval) {
         var name = runtimeName(id, catalogVersion, tenantVersion, tool.name());
         return new McpToolSnapshot(
-                id, catalogVersion, tenantVersion, name, tool.name(), tool.description(), tool.inputSchema());
+                id,
+                catalogVersion,
+                tenantVersion,
+                name,
+                tool.name(),
+                tool.description(),
+                tool.inputSchema(),
+                requiresApproval);
+    }
+
+    public static List<Map<String, Object>> runtimeTools(List<McpToolSnapshot> snapshots) {
+        return snapshots.stream()
+                .map(tool -> Map.<String, Object>of(
+                        "name",
+                        tool.runtimeName(),
+                        "description",
+                        tool.description(),
+                        "inputSchema",
+                        tool.inputSchema(),
+                        "readOnly",
+                        true))
+                .toList();
     }
 
     static String runtimeName(UUID id, int catalogVersion, int tenantVersion, String nativeName) {
@@ -159,10 +209,23 @@ public class McpSelectionService {
         }
     }
 
-    private void requireIdentity() {
-        if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken)
-                || !grants.current().permissions().contains("ai:conversation:use")) {
+    private Access freshAccess() {
+        if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken)) {
             throw new ForgeException(FrameworkErrorCode.AUTH_FORBIDDEN);
+        }
+        // 工具边界不沿用 SDK 的跨请求一分钟缓存；同一请求的 RBAC 与 ABAC 共享一次真实 IAM 明细读取。
+        var store = new MembershipGrantStore(redis);
+        var grants = store.current();
+        if (!grants.permissions().contains("ai:conversation:use")) {
+            throw new ForgeException(FrameworkErrorCode.AUTH_FORBIDDEN);
+        }
+        return new Access(grants, new DataPermission(definitions, store));
+    }
+
+    private record Access(MembershipGrants grants, DataPermission data) {
+        @Override
+        public String toString() {
+            return "McpAccess[redacted]";
         }
     }
 }

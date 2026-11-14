@@ -9,6 +9,7 @@ import io.saasforge.ai.conversation.mapper.ConversationMessageMapper;
 import io.saasforge.ai.conversation.mapper.ConversationTurnMapper;
 import io.saasforge.ai.conversation.model.ConversationResponse;
 import io.saasforge.ai.conversation.model.CreateConversationRequest;
+import io.saasforge.ai.mcp.service.McpSelectionService;
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.prompt.service.PromptService;
 import io.saasforge.ai.skill.service.SkillService;
@@ -29,6 +30,7 @@ public class ConversationService {
     private final PromptService prompts;
     private final ConversationTurnMapper turns;
     private final SkillService skills;
+    private final McpSelectionService mcp;
     private final JsonMapper json = JsonMapper.builder().build();
 
     public ConversationService(
@@ -37,7 +39,9 @@ public class ConversationService {
             ModelSelectionService models,
             PromptService prompts,
             ConversationTurnMapper turns,
-            SkillService skills) {
+            SkillService skills,
+            McpSelectionService mcp) {
+        this.mcp = mcp;
         this.skills = skills;
         this.turns = turns;
         this.prompts = prompts;
@@ -64,8 +68,15 @@ public class ConversationService {
         row.setPromptVersion(prompt.version());
         row.setInstructions(prompt.content());
         row.setSkillSnapshot(json.writeValueAsString(skills.resolvePublished()));
+        var toolSnapshots = mcp.snapshotForConversation();
+        row.setMcpSnapshot(json.writeValueAsString(toolSnapshots));
         if (json.writeValueAsBytes(Map.of(
-                                "instructions", row.getInstructions(), "skills", json.readTree(row.getSkillSnapshot())))
+                                "instructions",
+                                row.getInstructions(),
+                                "skills",
+                                json.readTree(row.getSkillSnapshot()),
+                                "tools",
+                                McpSelectionService.runtimeTools(toolSnapshots)))
                         .length
                 > 900000) {
             throw new ForgeException(ConversationErrorCode.LIMIT);

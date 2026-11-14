@@ -76,3 +76,6 @@ ai:
     service-token: ${AI_RUNNER_SERVICE_TOKEN}
   model-proxy:
     secret-references: ${AI_MODEL_SECRET_REFERENCES:}
+  mcp:
+    trusted-business-origins: ${AI_MCP_TRUSTED_BUSINESS_ORIGINS:}
+    secret-references: ${AI_MCP_SECRET_REFERENCES:}

@@ -21,3 +21,9 @@ ALTER TABLE contract_record FORCE ROW LEVEL SECURITY;
 CREATE POLICY contract_tenant ON contract_record
     USING (tenant_id = CAST(NULLIF(current_setting('app.tenant_id', true), '') AS uuid))
     WITH CHECK (tenant_id = CAST(NULLIF(current_setting('app.tenant_id', true), '') AS uuid));
+
+-- 固定 ID 的未审核草稿用于部署凭据绑定；测试必须经真实 Operator HTTP 审核发布。
+INSERT INTO ai_mcp_catalog(id,name,configuration,published_version,enabled) VALUES ('019a2525-0900-7000-8000-000000000081','凭据边界验收目录','{"name": "凭据边界验收目录", "url": "https://mcp.example.test/tenant", "protocol": "STREAMABLE_HTTP", "credentialMode": "TENANT_SECRET", "isolation": "TENANT_CREDENTIAL", "tools": [{"name": "lookup", "description": "只读查询", "inputSchema": {"type": "object"}, "permission": "ai:mcp:read", "readOnly": true}]}',NULL,false);
+
+-- 固定 ID 的未审核草稿用于部署凭据绑定；测试必须经真实 Operator HTTP 审核发布。
+INSERT INTO ai_mcp_catalog(id,name,configuration,published_version,enabled) VALUES ('019a2525-0900-7000-8000-000000000082','凭据边界验收目录','{"name": "凭据边界验收目录", "url": "https://business.example.test/mcp", "protocol": "STREAMABLE_HTTP", "credentialMode": "BUSINESS_IDENTITY", "isolation": "BUSINESS_RBAC_ABAC", "tools": [{"name": "lookup", "description": "只读查询", "inputSchema": {"type": "object"}, "permission": "ai:mcp:read", "readOnly": true}]}',NULL,false);

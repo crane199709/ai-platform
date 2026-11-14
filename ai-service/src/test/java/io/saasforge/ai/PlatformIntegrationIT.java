@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.saasforge.ai.contract.entity.ContractRecord;
 import io.saasforge.ai.contract.mapper.ContractMapper;
+import io.saasforge.ai.mcp.service.McpTransport;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.ProviderTransport;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
@@ -12,8 +13,11 @@ import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.core.api.ErrorCode;
 import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.RequiresPermission;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
@@ -38,6 +42,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -107,6 +112,13 @@ class PlatformIntegrationIT {
         registry.add("forge.ops.token", () -> PlatformEnvironment.OPS);
         registry.add("forge.mq.enabled", () -> true);
         registry.add("CONVERSATION_TEST_KEY", () -> "test-provider-secret");
+        registry.add("ai.mcp.trusted-business-origins", () -> "https://business.example.test");
+        registry.add(
+                "ai.mcp.secret-references",
+                () -> "AI_MCP_019A2525000070008000000000000001_019A2525090070008000000000000081");
+        registry.add(
+                "AI_MCP_019A2525000070008000000000000001_019A2525090070008000000000000081",
+                () -> "test-tenant-mcp-key-never-log");
         registry.add("NON_MODEL_TEST_KEY", () -> "must-not-forward");
         registry.add("forge.mq.ssl", () -> false);
         registry.add("forge.mq.endpoints", platform::mqEndpoints);
@@ -633,6 +645,7 @@ class PlatformIntegrationIT {
         }
 
         final List<Run> requests = new CopyOnWriteArrayList<>();
+        final Map<UUID, Consumer<Run>> toolProbes = new ConcurrentHashMap<>();
         final Set<UUID> cancelled = ConcurrentHashMap.newKeySet();
         String serviceBase;
         final List<Integer> proxyStatuses = new CopyOnWriteArrayList<>();
@@ -640,6 +653,45 @@ class PlatformIntegrationIT {
 
         public void run(Run request, Consumer<Event> emit) {
             requests.add(request);
+            var probe = toolProbes.get(request.session().sessionId());
+            if (probe != null) {
+                probe.accept(request);
+            }
+
+            if (request.text().startsWith("audit skill ")) {
+                var json = JsonMapper.builder().build();
+                String callId = "skill-call-" + UUID.randomUUID();
+                String code = request.session().skills().get(0).get("code").toString();
+                emit.accept(new Event(
+                        "tool.call",
+                        json.valueToTree(Map.of(
+                                "name",
+                                "skill",
+                                "callId",
+                                callId,
+                                "arguments",
+                                json.writeValueAsString(Map.of("name", code))))));
+                if (request.text().endsWith("interrupted")) {
+                    emit.accept(new Event(
+                            "error", json.valueToTree(Map.of("code", "runner.modelFailure", "retryable", true))));
+                    return;
+                }
+                var result = new Event(
+                        "tool.result",
+                        json.valueToTree(Map.of(
+                                "name",
+                                "skill",
+                                "callId",
+                                callId,
+                                "content",
+                                "private-skill-result",
+                                "isError",
+                                request.text().endsWith("failure"))));
+                emit.accept(result);
+                emit.accept(result);
+                emit.accept(new Event("completed", json.valueToTree(Map.of("usageReported", false))));
+                return;
+            }
             if (request.text().equals("slow") || request.text().equals("idle")) {
                 for (int i = 0;
                         i < 1000 && !cancelled.contains(request.session().sessionId());
@@ -1935,6 +1987,618 @@ class PlatformIntegrationIT {
         assertThat(repeated).contains(aliases.get(0), aliases.get(1), first, second);
     }
 
+    @Autowired
+    FakeMcpTransport mcpTransport;
+
+    @Test
+    void conversationMcpSnapshotCallsRealAuthorizedProxyAndRevokesTerminalCapabilities() throws Exception {
+        String model = createConversationModel();
+        String catalogId = createPublishedMcp("代理目录");
+        publishMcpSelection(catalogId, tokenA, List.of("lookup"));
+        String pinnedAlias = mcpAlias(catalogId, tokenA);
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "MCP快照", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var current = call(
+                        "http://127.0.0.1:" + port, HttpMethod.GET, "/platform/mcp/" + catalogId, operator, null, 200)
+                .path("data")
+                .path("draft");
+        var changed = (ObjectNode) current.deepCopy();
+        changed.put("name", "新发布目录");
+        call(
+                "http://127.0.0.1:" + port,
+                HttpMethod.PUT,
+                "/platform/mcp/" + catalogId + "/draft",
+                operator,
+                changed,
+                200);
+        call(
+                "http://127.0.0.1:" + port,
+                HttpMethod.POST,
+                "/platform/mcp/" + catalogId + "/publish",
+                operator,
+                Map.of(),
+                200);
+        publishMcpSelection(catalogId, tokenA, List.of("lookup", "detail"));
+        var aliases = new ArrayList<String>();
+        runtime.toolProbes.put(UUID.fromString(id), request -> {
+            assertThat(request.session().tools().stream().map(t -> t.get("name")))
+                    .contains(pinnedAlias);
+            String alias = pinnedAlias;
+            aliases.add(alias);
+            var payload = Map.of("name", alias, "arguments", Map.of("query", "private-sensitive-query"));
+            var result = toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    id,
+                    payload,
+                    200);
+            assertThat(result.path("content").get(0).path("text").asText()).isEqualTo("status: healthy");
+            assertThat(result.path("isError").asBoolean()).isFalse();
+            toolCall(request, "invalid", request.session().tenantId().toString(), id, payload, 401);
+            toolCall(request, tokenA, request.session().tenantId().toString(), id, payload, 401);
+            toolCall(request, request.contextToken(), UUID.randomUUID().toString(), id, payload, 401);
+            toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    UUID.randomUUID().toString(),
+                    payload,
+                    401);
+            toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    id,
+                    Map.of("name", "m00000000000000000000000000000000", "arguments", Map.of()),
+                    403);
+            var failed = toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    id,
+                    Map.of("name", alias, "arguments", Map.of("fail", true)),
+                    502);
+            assertThat(failed.toString()).doesNotContain("upstream-secret", "private-sensitive-query");
+            call(
+                    "http://127.0.0.1:" + port,
+                    HttpMethod.PUT,
+                    "/platform/mcp/" + catalogId + "/status",
+                    operator,
+                    Map.of("enabled", false),
+                    200);
+            toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    id,
+                    payload,
+                    409);
+        });
+        try {
+            assertThat(sendMessage(id, "MCP proxy", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:done");
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(id));
+            call(
+                    "http://127.0.0.1:" + port,
+                    HttpMethod.PUT,
+                    "/platform/mcp/" + catalogId + "/status",
+                    operator,
+                    Map.of("enabled", true),
+                    200);
+        }
+        assertThat(aliases).hasSize(1);
+        var request = runtime.requests.stream()
+                .filter(r -> r.session().sessionId().toString().equals(id))
+                .findFirst()
+                .orElseThrow();
+        toolCall(
+                request,
+                request.contextToken(),
+                request.session().tenantId().toString(),
+                id,
+                Map.of("name", aliases.get(0), "arguments", Map.of()),
+                401);
+        var forwarded = mcpTransport.calls.stream()
+                .filter(c -> c.uri().toString().equals("https://mcp.example.test/mcp")
+                        && "tools/call".equals(c.body().path("method").asText()))
+                .toList();
+        assertThat(forwarded).hasSize(2);
+        assertThat(forwarded.get(0).body().path("params").path("name").asText()).isEqualTo("lookup");
+        assertThat(forwarded.get(0).headers().containsKey("Authorization")).isFalse();
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var events = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/iam/audit/events?action=ai.tool.call&resourceId=" + aliases.get(0),
+                            tokenA,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(events).hasSize(3);
+            assertThat(events.toString())
+                    .contains("success", "failure")
+                    .doesNotContain(
+                            "private-sensitive-query",
+                            "status: healthy",
+                            "upstream-secret",
+                            "arguments",
+                            "contextToken");
+            for (var event : events) {
+                assertThat(event.path("actorId").asText()).isEqualTo(IDENTITY);
+                assertThat(event.path("detail").toString()).isEqualTo("{}");
+            }
+        });
+    }
+
+    private JsonNode toolCall(
+            AgentRuntime.Run run, String token, String tenant, String session, Object body, int status) {
+        return PlatformEnvironment.client("http://127.0.0.1:" + port)
+                .post()
+                .uri("/internal/runner/tools/call")
+                .header("Authorization", "Bearer " + token)
+                .header("X-AI-Tenant-Id", tenant)
+                .header("X-AI-Session-Id", session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((req, res) -> {
+                    var result = res.bodyTo(JsonNode.class);
+                    assertThat(res.getStatusCode().value())
+                            .as("tool proxy %s", result)
+                            .isEqualTo(status);
+                    return result;
+                });
+    }
+
+    static class FakeMcpTransport implements McpTransport {
+        record Call(URI uri, Map<String, String> headers, JsonNode body) {
+            @Override
+            public String toString() {
+                return "McpCall[redacted]";
+            }
+        }
+
+        final List<Call> calls = new CopyOnWriteArrayList<>();
+
+        public Response exchange(String method, URI uri, Map<String, String> headers, String payload) {
+            var json = JsonMapper.builder().build();
+            var body = payload == null ? json.createObjectNode() : json.readTree(payload);
+            calls.add(new Call(uri, Map.copyOf(headers), body));
+            if (method.equals("DELETE")) {
+                return new Response(204, "", null, new byte[0]);
+            }
+            if (body.path("method").asText().equals("notifications/initialized")) {
+                return new Response(202, "", null, new byte[0]);
+            }
+            if (body.path("params").path("arguments").path("fail").asBoolean()) {
+                return new Response(500, "text/plain", null, "upstream-secret".getBytes(StandardCharsets.UTF_8));
+            }
+            Object result = body.path("method").asText().equals("initialize")
+                    ? Map.of(
+                            "protocolVersion",
+                            "2025-03-26",
+                            "capabilities",
+                            Map.of("tools", Map.of()),
+                            "serverInfo",
+                            Map.of("name", "test", "version", "1"))
+                    : Map.of("content", List.of(Map.of("type", "text", "text", "status: healthy")), "isError", false);
+            return new Response(
+                    200,
+                    "application/json",
+                    "mcp-test-session",
+                    json.writeValueAsBytes(
+                            Map.of("jsonrpc", "2.0", "id", body.path("id").asInt(), "result", result)));
+        }
+    }
+
+    @Test
+    void mcpCredentialsStayInJavaAndBusinessIdentityOnlyReachesTrustedOrigin() throws Exception {
+        String model = createConversationModel();
+        String base = "http://127.0.0.1:" + port;
+        String secretCatalog = "019a2525-0900-7000-8000-000000000081";
+        String businessCatalog = "019a2525-0900-7000-8000-000000000082";
+        call(base, HttpMethod.POST, "/platform/mcp/" + secretCatalog + "/publish", operator, Map.of(), 200);
+        call(base, HttpMethod.POST, "/platform/mcp/" + businessCatalog + "/publish", operator, Map.of(), 200);
+        publishMcpSelection(secretCatalog, tokenA, List.of("lookup"));
+        publishMcpSelection(secretCatalog, tokenB, List.of("lookup"));
+        publishMcpSelection(businessCatalog, tokenA, List.of("lookup"));
+        var draft = (ObjectNode) call(base, HttpMethod.GET, "/platform/mcp/" + businessCatalog, operator, null, 200)
+                .path("data")
+                .path("draft")
+                .deepCopy();
+        draft.put("url", "https://untrusted.example.test/mcp");
+        call(base, HttpMethod.POST, "/platform/mcp", operator, draft, 400);
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "凭据边界", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String secretAlias = mcpAlias(secretCatalog, tokenA);
+        String businessAlias = mcpAlias(businessCatalog, tokenA);
+        runtime.toolProbes.put(UUID.fromString(id), request -> {
+            toolCall(
+                    request,
+                    request.contextToken(),
+                    TENANT_A.toString(),
+                    id,
+                    Map.of("name", secretAlias, "arguments", Map.of()),
+                    200);
+            toolCall(
+                    request,
+                    request.contextToken(),
+                    TENANT_A.toString(),
+                    id,
+                    Map.of("name", businessAlias, "arguments", Map.of()),
+                    200);
+        });
+        try {
+            assertThat(sendMessage(id, "credentials", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:done");
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(id));
+        }
+        String other = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenB,
+                        Map.of("title", "未绑定凭据", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String unboundAlias = mcpAlias(secretCatalog, tokenB);
+        runtime.toolProbes.put(UUID.fromString(other), request -> {
+            var denied = toolCall(
+                    request,
+                    request.contextToken(),
+                    request.session().tenantId().toString(),
+                    other,
+                    Map.of("name", unboundAlias, "arguments", Map.of()),
+                    503);
+            assertThat(denied.toString()).doesNotContain("AI_MCP_", "test-tenant-mcp-key", tokenA);
+        });
+        try {
+            assertThat(sendMessage(
+                            other, "unbound credentials", UUID.randomUUID().toString(), tokenB))
+                    .contains("event:done");
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(other));
+        }
+        var external = mcpTransport.calls.stream()
+                .filter(c -> c.uri().toString().equals("https://mcp.example.test/tenant"))
+                .toList();
+        assertThat(external).isNotEmpty();
+        for (var request : external) {
+            assertThat("Bearer test-tenant-mcp-key-never-log"
+                            .equals(request.headers().get("Authorization")))
+                    .isTrue();
+            assertThat(request.body().toString()).doesNotContain(tokenA, "test-tenant-mcp-key");
+        }
+        var business = mcpTransport.calls.stream()
+                .filter(c -> c.uri().getHost().equals("business.example.test"))
+                .toList();
+        assertThat(business).isNotEmpty();
+        for (var request : business) {
+            assertThat(("Bearer " + tokenA).equals(request.headers().get("Authorization")))
+                    .isTrue();
+        }
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp", tokenA, null, 200)
+                        .toString())
+                .doesNotContain("AI_MCP_", "test-tenant-mcp-key", "secretRef");
+    }
+
+    private String mcpAlias(String catalogId, String token) {
+        for (var tool : call(platform.gateway(), HttpMethod.GET, "/ai/mcp/tools", token, null, 200)
+                .path("data")) {
+            if (tool.path("catalogId").asText().equals(catalogId)
+                    && tool.path("nativeName").asText().equals("lookup")) {
+                return tool.path("runtimeName").asText();
+            }
+        }
+        throw new AssertionError("Expected authorized MCP lookup declaration");
+    }
+
+    @Test
+    void publishedLocalSkillCallsAuditCorrelatedSuccessFailureAndInterruptionWithoutContent() throws Exception {
+        String model = createConversationModel();
+        String base = "http://127.0.0.1:" + port;
+        String code = "audited-skill-" + UUID.randomUUID().toString().substring(0, 8);
+        String skill = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/skills",
+                        operator,
+                        Map.of(
+                                "code",
+                                code,
+                                "name",
+                                "审计技能",
+                                "description",
+                                "审核只读技能",
+                                "content",
+                                "private-skill-instructions",
+                                "status",
+                                "REVIEWED"),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/skills/" + skill + "/publish", operator, Map.of(), 200);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/skills/" + skill + "/draft",
+                tokenA,
+                Map.of("enabled", true),
+                200);
+        call(platform.gateway(), HttpMethod.POST, "/ai/skills/" + skill + "/publish", tokenA, Map.of(), 200);
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "本地技能审计", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        assertThat(sendMessage(id, "audit skill success", UUID.randomUUID().toString(), tokenA))
+                .contains("event:done", "displayName");
+        assertThat(sendMessage(id, "audit skill failure", UUID.randomUUID().toString(), tokenA))
+                .contains("event:done");
+        assertThat(sendMessage(id, "audit skill interrupted", UUID.randomUUID().toString(), tokenA))
+                .contains("event:error");
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var completed = new ArrayList<JsonNode>();
+            var started = new ArrayList<JsonNode>();
+            for (String action : List.of("ai.tool.call", "ai.tool.start")) {
+                for (var event : call(
+                                platform.gateway(),
+                                HttpMethod.GET,
+                                "/iam/audit/events?action=" + action + "&resourceType=skillToolCall",
+                                tokenA,
+                                null,
+                                200)
+                        .path("data")) {
+                    if (event.path("detail").path("conversationId").asText().equals(id)) {
+                        (action.equals("ai.tool.call") ? completed : started).add(event);
+                        assertThat(event.toString())
+                                .doesNotContain(
+                                        "private-skill-instructions", "private-skill-result", "arguments", code);
+                    }
+                }
+            }
+            assertThat(started).hasSize(3);
+            assertThat(completed).hasSize(3);
+            assertThat(completed.stream()
+                            .filter(e -> e.path("outcome").asText().equals("success"))
+                            .count())
+                    .isEqualTo(1);
+            assertThat(completed.stream()
+                            .filter(e -> e.path("outcome").asText().equals("failure"))
+                            .count())
+                    .isEqualTo(2);
+            assertThat(started.stream().map(e -> e.path("resourceId").asText()).toList())
+                    .containsExactlyInAnyOrderElementsOf(completed.stream()
+                            .map(e -> e.path("resourceId").asText())
+                            .toList());
+        });
+    }
+
+    @Test
+    void sensitiveReadOnlyToolsRequireActiveOwnerApprovalAndNeverForwardRejectedCancelledOrExpiredCalls()
+            throws Exception {
+        String model = createConversationModel();
+        String base = "http://127.0.0.1:" + port;
+        String catalog = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/mcp",
+                        operator,
+                        Map.of(
+                                "name",
+                                "敏感只读查询",
+                                "url",
+                                "https://mcp.example.test/approval",
+                                "protocol",
+                                "STREAMABLE_HTTP",
+                                "credentialMode",
+                                "PUBLIC",
+                                "isolation",
+                                "PUBLIC_DATA",
+                                "tools",
+                                List.of(Map.of(
+                                        "name",
+                                        "lookup",
+                                        "description",
+                                        "读取敏感只读状态",
+                                        "inputSchema",
+                                        Map.of("type", "object"),
+                                        "permission",
+                                        "ai:mcp:read",
+                                        "readOnly",
+                                        true,
+                                        "requiresApproval",
+                                        true))),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/mcp/" + catalog + "/publish", operator, Map.of(), 200);
+        publishMcpSelection(catalog, tokenA, List.of("lookup"));
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "敏感工具审批", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String alias = mcpAlias(catalog, tokenA);
+        runtime.toolProbes.put(UUID.fromString(id), request -> {
+            int expected = request.text().endsWith("reject")
+                    ? 403
+                    : request.text().endsWith("cancel")
+                                    || request.text().endsWith("expire")
+                                    || request.text().endsWith("disabled")
+                            ? 409
+                            : 200;
+            try {
+                toolCall(
+                        request,
+                        request.contextToken(),
+                        TENANT_A.toString(),
+                        id,
+                        Map.of("name", alias, "arguments", Map.of("query", "private-approval-query")),
+                        expected);
+            } catch (RuntimeException error) {
+                if (!request.text().endsWith("cancel")) {
+                    throw error;
+                }
+            }
+        });
+        try {
+            for (String mode : List.of("approve", "reject", "disabled", "cancel", "expire")) {
+                var response = openMessage(id, "approval " + mode, tokenA);
+                try (var reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                    var pending = readApproval(reader);
+                    assertThat(pending.path("displayName").asText()).isEqualTo("lookup");
+                    assertThat(pending.toString())
+                            .doesNotContain("private-approval-query", "arguments", "contextToken");
+                    String approval = pending.path("approvalId").asText();
+                    assertThat(Instant.parse(pending.path("expiresAt").asText()))
+                            .isAfter(Instant.now())
+                            .isBefore(Instant.now().plusSeconds(21));
+                    long before = approvalForwards();
+                    if (mode.equals("approve")) {
+                        call(
+                                platform.gateway(),
+                                HttpMethod.POST,
+                                "/ai/mcp/approvals/" + approval + "/decision",
+                                tokenB,
+                                Map.of("approved", true),
+                                404);
+                        call(
+                                platform.gateway(),
+                                HttpMethod.POST,
+                                "/ai/mcp/approvals/" + approval + "/decision",
+                                readOnlyMember,
+                                Map.of("approved", true),
+                                404);
+                    }
+                    if (mode.equals("disabled")) {
+                        call(
+                                base,
+                                HttpMethod.PUT,
+                                "/platform/mcp/" + catalog + "/status",
+                                operator,
+                                Map.of("enabled", false),
+                                200);
+                    }
+                    if (mode.equals("cancel")) {
+                        call(
+                                platform.gateway(),
+                                HttpMethod.POST,
+                                "/ai/conversations/" + id + "/cancel",
+                                tokenA,
+                                Map.of(),
+                                200);
+                    } else if (!mode.equals("expire")) {
+                        var decision = call(
+                                        platform.gateway(),
+                                        HttpMethod.POST,
+                                        "/ai/mcp/approvals/" + approval + "/decision",
+                                        tokenA,
+                                        Map.of("approved", !mode.equals("reject")),
+                                        200)
+                                .path("data");
+                        assertThat(decision.path("status").asText())
+                                .isEqualTo(mode.equals("reject") ? "REJECTED" : "APPROVED");
+                    }
+                    String remaining = reader.lines().collect(Collectors.joining("\n"));
+                    assertThat(remaining).contains("tool.approval.resolved", "event:done");
+                    assertThat(approvalForwards()).isEqualTo(before + (mode.equals("approve") ? 1 : 0));
+                    if (mode.equals("expire")) {
+                        assertThat(remaining).contains("EXPIRED");
+                    }
+                    if (mode.equals("cancel")) {
+                        assertThat(remaining).contains("CANCELLED");
+                    }
+                } finally {
+                    call(
+                            base,
+                            HttpMethod.PUT,
+                            "/platform/mcp/" + catalog + "/status",
+                            operator,
+                            Map.of("enabled", true),
+                            200);
+                }
+            }
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(id));
+        }
+        assertThat(approvalForwards()).isEqualTo(1);
+    }
+
+    private long approvalForwards() {
+        return mcpTransport.calls.stream()
+                .filter(c -> c.uri().getPath().equals("/approval")
+                        && c.body().path("method").asText().equals("tools/call"))
+                .count();
+    }
+
+    private HttpResponse<InputStream> openMessage(String id, String text, String token) throws Exception {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build()
+                .send(
+                        HttpRequest.newBuilder(URI.create(platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                .timeout(Duration.ofSeconds(40))
+                                .header("Authorization", "Bearer " + token)
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString(JsonMapper.builder()
+                                        .build()
+                                        .writeValueAsString(Map.of(
+                                                "text",
+                                                text,
+                                                "idempotencyKey",
+                                                UUID.randomUUID().toString()))))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofInputStream());
+    }
+
+    private JsonNode readApproval(BufferedReader reader) throws Exception {
+        String type = "";
+        String data = "";
+        for (String line; (line = reader.readLine()) != null; ) {
+            if (line.startsWith("event:")) {
+                type = line.substring(6).strip();
+            } else if (line.startsWith("data:")) {
+                data = line.substring(5).stripLeading();
+            } else if (line.isEmpty() && type.equals("tool.approval")) {
+                return JsonMapper.builder().build().readTree(data);
+            }
+        }
+        throw new AssertionError("Expected a pending tool approval before execution");
+    }
+
     private String createPrompt(String content) {
         return call(
                         platform.gateway(),
@@ -1962,6 +2626,12 @@ class PlatformIntegrationIT {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class ProbeConfiguration {
+        @Bean
+        @Primary
+        FakeMcpTransport fakeMcpTransport() {
+            return new FakeMcpTransport();
+        }
+
         @Bean
         @Primary
         ProviderTransport fakeProviderTransport() {

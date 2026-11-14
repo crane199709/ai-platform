@@ -10,7 +10,8 @@ public record McpToolSnapshot(
         String runtimeName,
         String nativeName,
         String description,
-        Map<String, Object> inputSchema) {
+        Map<String, Object> inputSchema,
+        boolean requiresApproval) {
     public McpToolSnapshot {
         inputSchema = Map.copyOf(inputSchema);
     }

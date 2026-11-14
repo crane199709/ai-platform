@@ -155,3 +155,6 @@ CREATE POLICY ai_mcp_tool_grant_tenant ON ai_mcp_tool_grant
 COMMENT ON COLUMN ai_mcp_tool_grant.catalog_version IS '审核目录版本快照';
 COMMENT ON COLUMN ai_mcp_tool_grant.runtime_name IS '固定短别名，保留 DSH 前缀后的提供方命名预算';
 CREATE UNIQUE INDEX ai_mcp_tool_grant_runtime_name ON ai_mcp_tool_grant(tenant_id,runtime_name) WHERE NOT deleted;
+
+ALTER TABLE ai_conversation ADD COLUMN mcp_snapshot text NOT NULL DEFAULT '[]';
+COMMENT ON COLUMN ai_conversation.mcp_snapshot IS '建会话时已审核、租户启用且已授权的 MCP 工具与版本快照';

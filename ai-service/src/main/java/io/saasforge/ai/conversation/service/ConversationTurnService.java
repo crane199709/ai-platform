@@ -8,6 +8,8 @@ import io.saasforge.ai.conversation.mapper.ConversationMapper;
 import io.saasforge.ai.conversation.mapper.ConversationMessageMapper;
 import io.saasforge.ai.conversation.mapper.ConversationTurnMapper;
 import io.saasforge.ai.conversation.model.SendMessageRequest;
+import io.saasforge.ai.mcp.service.McpSelectionService;
+import io.saasforge.ai.mcp.service.McpToolSnapshot;
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.sdk.audit.AuditCategory;
@@ -102,7 +104,10 @@ public class ConversationTurnService {
                 "text",
                 request.text(),
                 "skills",
-                json.readTree(conversation.getSkillSnapshot()));
+                json.readTree(conversation.getSkillSnapshot()),
+                "tools",
+                McpSelectionService.runtimeTools(
+                        List.of(json.readValue(conversation.getMcpSnapshot(), McpToolSnapshot[].class))));
         if (history.size() >= 998 || json.writeValueAsString(check).getBytes(StandardCharsets.UTF_8).length > 900000) {
             throw new ForgeException(ConversationErrorCode.LIMIT);
         }

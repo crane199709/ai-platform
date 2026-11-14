@@ -15,6 +15,7 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
     for await (const chunk of req) body += chunk
     proxyRequests.push({ path: req.url, headers: { ...req.headers }, body: JSON.parse(body) })
     if (req.url === '/tools/call') {
+      if (scenario === 'tool-approval-wait') await new Promise((resolve) => setTimeout(resolve, 17000))
       if (scenario === 'tool-failure') {
         res.writeHead(503).end('never-echo-upstream-secret')
         return
@@ -184,6 +185,19 @@ test('real DSH preserves distinct short aliases within the final provider functi
   }
   assert.deepEqual(proxyRequests.find((request) => request.path === '/tools/call')?.body,
     { name: aliases[0], arguments: { query: 'status' } })
+})
+
+test('real DSH keeps a tool request alive while Java waits for a user decision', { timeout: 30000 }, async (t) => {
+  const { call } = await fixture(t, 'tool-approval-wait')
+  const created = await call('/sessions', 'POST', { sessionId: 'approval-wait', model: 'test-model',
+    tools: [{ name: 'lookup', description: 'Reviewed sensitive read-only lookup', inputSchema: { type: 'object' }, readOnly: true }],
+  })
+  assert.equal(created.status, 201, await created.text())
+  const stream = await call('/sessions/approval-wait/messages', 'POST', { text: 'lookup after approval', contextToken: 'short-lived-context' })
+  const events = await stream.text()
+  assert.match(events, /event: completed/)
+  assert.match(events, /status: healthy/)
+  assert.doesNotMatch(events, /runner.runtimeTimeout/)
 })
 
 test(

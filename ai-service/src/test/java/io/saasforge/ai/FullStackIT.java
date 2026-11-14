@@ -28,8 +28,11 @@ import javax.crypto.spec.SecretKeySpec;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpMethod;
@@ -46,6 +49,7 @@ import tools.jackson.databind.node.ObjectNode;
 /** 真 Shell → Gateway → IAM/AI → 真实 DSH → HTTPS 模型/MCP；无 AgentRuntime 替身。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FullStackIT {
     static final UUID TENANT_A = UUID.fromString("019a2525-0000-7000-8000-000000000001");
     static final UUID MEMBER_A = UUID.fromString("019a2525-0000-7000-8000-000000000031");
@@ -315,6 +319,7 @@ class FullStackIT {
     }
 
     @Test
+    @Order(1)
     void realShellConversationApprovalIsolationAndUsage() throws Exception {
         var command = new ProcessBuilder("pnpm", "exec", "playwright", "test", "-c", "playwright.fullstack.config.ts")
                 .directory(Path.of("../ai-sub-app").toFile())
@@ -369,6 +374,187 @@ class FullStackIT {
                                 .asInt())
                         .isEqualTo(54));
         Files.writeString(output.resolve("usage.json"), usage.toString());
+    }
+
+    /** 同一真实 DSH 与模型代理链验证零值、完全缺失和工具回合的部分缺失。 */
+    @Test
+    @Order(2)
+    void missingProviderUsageRetainsQuota() throws Exception {
+        String token = login(false, MEMBER_B);
+        for (String scenario : List.of("USAGE_ZERO", "USAGE_MISSING", "USAGE_MIXED")) {
+            String model = call(
+                            platform.gateway(),
+                            HttpMethod.POST,
+                            "/ai-platform/models",
+                            operator,
+                            Map.of(
+                                    "name",
+                                    scenario,
+                                    "provider",
+                                    "OPENAI_COMPATIBLE",
+                                    "modelId",
+                                    "local-" + scenario.toLowerCase().replace('_', '-'),
+                                    "baseUrl",
+                                    provider + "/v1",
+                                    "secretRef",
+                                    "FULLSTACK_MODEL_KEY",
+                                    "capabilities",
+                                    List.of("CHAT", "TOOLS"),
+                                    "status",
+                                    "ENABLED",
+                                    "contextWindow",
+                                    65536),
+                            201)
+                    .path("data")
+                    .path("id")
+                    .asText();
+            if (scenario.equals("USAGE_MIXED")) {
+                String catalog = call(
+                                platform.gateway(),
+                                HttpMethod.POST,
+                                "/ai-platform/mcp",
+                                operator,
+                                Map.of(
+                                        "name",
+                                        "计量验收只读状态",
+                                        "url",
+                                        provider + "/mcp",
+                                        "protocol",
+                                        "STREAMABLE_HTTP",
+                                        "credentialMode",
+                                        "PUBLIC",
+                                        "isolation",
+                                        "PUBLIC_DATA",
+                                        "tools",
+                                        List.of(Map.of(
+                                                "name",
+                                                "lookup",
+                                                "description",
+                                                "读取状态",
+                                                "inputSchema",
+                                                Map.of("type", "object"),
+                                                "permission",
+                                                "ai:mcp:read",
+                                                "readOnly",
+                                                true,
+                                                "requiresApproval",
+                                                false))),
+                                201)
+                        .path("data")
+                        .path("id")
+                        .asText();
+                call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai-platform/mcp/" + catalog + "/publish",
+                        operator,
+                        Map.of(),
+                        200);
+                call(
+                        platform.gateway(),
+                        HttpMethod.PUT,
+                        "/ai/mcp/" + catalog + "/draft",
+                        token,
+                        Map.of("enabled", true, "toolNames", List.of("lookup")),
+                        200);
+                call(platform.gateway(), HttpMethod.POST, "/ai/mcp/" + catalog + "/publish", token, Map.of(), 200);
+            }
+            String id = call(
+                            platform.gateway(),
+                            HttpMethod.POST,
+                            "/ai/conversations",
+                            token,
+                            Map.of("title", scenario, "modelId", model),
+                            201)
+                    .path("data")
+                    .path("id")
+                    .asText();
+            var stream = HttpClient.newHttpClient()
+                    .send(
+                            HttpRequest.newBuilder(
+                                            URI.create(platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                    .header("Authorization", "Bearer " + token)
+                                    .header("Content-Type", "application/json")
+                                    .POST(HttpRequest.BodyPublishers.ofString(JsonMapper.builder()
+                                            .build()
+                                            .writeValueAsString(Map.of(
+                                                    "text",
+                                                    scenario,
+                                                    "idempotencyKey",
+                                                    UUID.randomUUID().toString()))))
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertThat(stream.statusCode()).isEqualTo(200);
+            assertThat(stream.body()).contains("event:done");
+            var detail = call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, token, null, 200)
+                    .path("data");
+            var turn = detail.path("turns").get(0);
+            var measured = call(platform.gateway(), HttpMethod.GET, "/ai/usage", token, null, 200)
+                    .path("data");
+            assertThat(measured.path("activeTurns").asInt()).isZero();
+            if (scenario.equals("USAGE_ZERO")) {
+                assertThat(turn.path("usageReported").asBoolean()).isTrue();
+                assertThat(measured.path("unknownUsageTurns").asInt()).isZero();
+                assertThat(measured.path("chargedTokens").asLong()).isZero();
+            } else {
+                assertThat(turn.path("usageReported").asBoolean()).isFalse();
+                long estimate = scenario.equals("USAGE_MIXED") ? 131072 : 65536;
+                assertThat(measured.path("estimatedTokens").asLong()).isEqualTo(estimate);
+                assertThat(measured.path("chargedTokens").asLong()).isEqualTo(estimate);
+                assertThat(measured.path("unknownUsageTurns").asInt())
+                        .isEqualTo(scenario.equals("USAGE_MIXED") ? 2 : 1);
+                assertThat(measured.path("remainingTokens").asLong()).isZero();
+                var denied = HttpClient.newHttpClient()
+                        .send(
+                                HttpRequest.newBuilder(URI.create(
+                                                platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                        .header("Authorization", "Bearer " + token)
+                                        .header("Content-Type", "application/json")
+                                        .POST(HttpRequest.BodyPublishers.ofString(JsonMapper.builder()
+                                                .build()
+                                                .writeValueAsString(Map.of(
+                                                        "text",
+                                                        "must reject before model",
+                                                        "idempotencyKey",
+                                                        UUID.randomUUID().toString()))))
+                                        .build(),
+                                HttpResponse.BodyHandlers.ofString());
+                assertThat(denied.statusCode()).isEqualTo(429);
+                assertThat(denied.body()).contains("usage.quotaExceeded");
+                Files.writeString(output.resolve(scenario.toLowerCase() + ".json"), measured.toString());
+                Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+                    var projection = call(
+                                    platform.gateway(),
+                                    HttpMethod.GET,
+                                    "/platform/tenants/019a2525-0000-7000-8000-000000000002/ai-usage",
+                                    operator,
+                                    null,
+                                    200)
+                            .path("data");
+                    assertThat(projection.path("estimatedTokens").asLong()).isEqualTo(estimate);
+                    assertThat(projection.path("unknownUsageTurns").asInt())
+                            .isEqualTo(scenario.equals("USAGE_MIXED") ? 2 : 1);
+                    Files.writeString(
+                            output.resolve("platform-" + scenario.toLowerCase() + ".json"), projection.toString());
+                });
+                if (scenario.equals("USAGE_MISSING")) {
+                    // 通过现有运营校正接口开启下一个独立场景，不改变套餐额度。
+                    call(
+                            platform.gateway(),
+                            HttpMethod.PUT,
+                            "/ai-platform/usage/tenants/019a2525-0000-7000-8000-000000000002/turns/"
+                                    + turn.path("id").asText() + "/estimate",
+                            operator,
+                            Map.of("estimatedTokens", 0, "reasonCode", "PROVIDER_RECONCILIATION"),
+                            200);
+                }
+            }
+            call(platform.gateway(), HttpMethod.DELETE, "/ai/conversations/" + id, token, null, 200);
+        }
+        var evidence = JsonMapper.builder().build().readTree(read(output.resolve("provider-evidence.json")));
+        var modelCalls = new ArrayList<String>();
+        evidence.path("usageScenarios").forEach(item -> modelCalls.add(item.asText()));
+        assertThat(modelCalls).containsExactly("USAGE_ZERO", "USAGE_MISSING", "USAGE_MIXED", "USAGE_MIXED");
     }
 
     void start(String name, Path directory, Map<String, String> environment, String... command) throws Exception {

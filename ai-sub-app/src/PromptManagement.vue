@@ -4,13 +4,13 @@ import { useAccessControl } from '@crane199709/sdk'
 import { PageToolbar, formatDateTime, overlaySize } from '@crane199709/ui'
 import type { Prompt, PromptVersion } from './contracts'
 import { errorTip, isAbort, json, useTenantScope } from './tenant-scope'
+import { useManagementAction } from './management-action'
 
 const { api, signal } = useTenantScope()
+const { saving, error, success, action } = useManagementAction(signal)
 const access = useAccessControl()
 const rows = ref<Prompt[]>([])
 const loading = ref(false)
-const error = ref('')
-const success = ref('')
 const editor = ref(false)
 const selected = ref<Prompt>()
 const name = ref('')
@@ -20,7 +20,6 @@ const values = ref<Record<string, string>>({})
 const preview = ref('')
 const history = ref<PromptVersion[]>([])
 const historyOpen = ref(false)
-const saving = ref(false)
 const variableNames = () => declarations.value.split(/[,，\s]+/).filter(Boolean)
 async function load() {
   loading.value = true
@@ -42,18 +41,7 @@ function edit(row?: Prompt) {
   preview.value = ''
   editor.value = true
 }
-async function action(task: () => Promise<void>) {
-  saving.value = true
-  error.value = ''
-  success.value = ''
-  try {
-    await task()
-  } catch (e) {
-    if (!isAbort(e)) error.value = errorTip(e)
-  } finally {
-    if (!signal.aborted) saving.value = false
-  }
-}
+
 async function save() {
   await action(async () => {
     const row = await api<Prompt>(

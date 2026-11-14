@@ -8,7 +8,7 @@
 
 `inputTokens` 已包含 `cachedInputTokens`，总量仅 input+output；`estimatedTokens` 是尚无提供方完整用量的估计占额，独立于精确 token。`chargedTokens=totalTokens+estimatedTokens`。`remainingTokens` 在不限额时 null，否则 max(0,quota-charged)。`tokenQuota:null` 仅在 `quotaKnown:true` 时表示不限额，`quotaKnown:false` 表示尚未收到可信 Plan 副本；新回合返回 503 `usage.planUnavailable`，页面显示配额尚未同步，不显示不限额。只有已收到的当前/历史消息明确 `tokenQuota:null` 或历史消息省略此字段才为已知不限额。未知计量必须提示估计、不能宣称精确用量或免费。有限配额执行中的回合串行准入，`activeTurns>0` 新回合 409 `usage.busy`；已消费达到额度时 429 `usage.quotaExceeded`。历史幂等回放不再消费额度。
 
-无提供方 usage 的已执行回合按每次实际模型请求的上下文窗口估计占额；提供方发送之前持久记录请求尝试，执行结果仍以提供方 usage 为准，不能视为精确账单。超过三分钟的运行账本会在准入或用量查询时以独立事务恢复成已结束未知估计；运营校正可恢复可用额度。运营人员可用 `PUT /ai-platform/usage/tenants/{tenantId}/turns/{turnId}/estimate`，body `{"estimatedTokens":2000,"reasonCode":"PROVIDER_RECONCILIATION"}` 修正估计，使用独立 Platform Realm 与现有 `platform:ops:manage`，审计 `ai.usage.adjustEstimate`；仍标记 unknown，不伪造精确 token，调整与日快照/Outbox 同事务。未开始执行的池满拒绝为零计量。
+本回合任一次模型请求缺失完整合法的提供方 usage 时，已执行回合按每次实际模型请求的上下文窗口估计占额；DSH/pi-ai 合成的零对象不算提供方计量，显式合法零值仍可正常结算。工具回合仅部分模型请求有 usage 也保留未知占额；提供方发送之前持久记录请求尝试，执行结果仍以提供方 usage 为准，不能视为精确账单。超过三分钟的运行账本会在准入或用量查询时以独立事务恢复成已结束未知估计；运营校正可恢复可用额度。运营人员可用 `PUT /ai-platform/usage/tenants/{tenantId}/turns/{turnId}/estimate`，body `{"estimatedTokens":2000,"reasonCode":"PROVIDER_RECONCILIATION"}` 修正估计，使用独立 Platform Realm 与现有 `platform:ops:manage`，审计 `ai.usage.adjustEstimate`；仍标记 unknown，不伪造精确 token，调整与日快照/Outbox 同事务。未开始执行的池满拒绝为零计量。
 
 平台运营查询 `GET /platform/tenants/{tenantId}/ai-usage?month=2026-11` 使用 `platform:tenant:read` 且受既有 tenant Data Policy 限制。响应含 `month,businessZone,received,inputTokens,outputTokens,cachedInputTokens,totalTokens,estimatedTokens,turnCount,toolCalls,unknownUsageTurns,days`。`received:false` 为尚未收到快照，不宣称确定为零。
 

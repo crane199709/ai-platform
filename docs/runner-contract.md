@@ -35,7 +35,7 @@ Runner 禁用 JSONL 持久化及其投影缓存，只保存运行期内存状态
 | cancelled   | `{ "sessionId": "..." }`                                                                                                                         |
 | error       | `{ "code": "runner.*", "retryable": true/false }`                                                                                                |
 
-`completed/cancelled/error` 为互斥终态。usage 为本回合各 DSH 模型步骤之和；inputTokens/outputTokens 为数字；inputTokens 是含缓存读取/写入的总输入数（Runner 将上游 DSH 的分离计数汇总，避免配额漏计），cachedInputTokens 是其中缓存读取的子集。cachedInputTokens 仅在提供方报告缓存读取时出现。上游未报告用量时返回零值并置 `usageReported:false`，不能把它当作免费调用；计量侧应按缺失用量处理。没有模型原始密钥进入该链路。
+`completed/cancelled/error` 为互斥终态。usage 为本回合各 DSH 模型步骤之和；inputTokens/outputTokens 为数字；inputTokens 是含缓存读取/写入的总输入数（Runner 将上游 DSH 的分离计数汇总，避免配额漏计），cachedInputTokens 是其中缓存读取的子集。cachedInputTokens 仅在提供方报告缓存读取时出现。Runner 在现有 SSE 转发中逐次检查提供方原始 usage，只有本回合每次模型请求均上报完整、合法的输入/输出及缓存子集时才置 `usageReported:true`。显式合法零值仍是已报告；固定 DSH/pi-ai 合成的零对象不作为上报证据。任一次缺失或无效计量（包括工具回合仅部分步骤有 usage）都置 false，计量侧保留整个回合的保守估计占额，不能把未知成本当作免费调用。该检查不等待完整响应才发送 delta。没有模型原始密钥进入该链路。
 
 SDK 没有实时 token 通知；delta 来自透明模型代理桥观测的原始 OpenAI-compatible SSE `choices[].delta.content`，到达即发，不在完成后拆字。相同原始流同时交给真实 DSH provider adapter。最终 transcript、工具调用与用量取 DSH 已提交事件。连接断开会取消当前回合。
 

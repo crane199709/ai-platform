@@ -22,7 +22,7 @@ public interface ConversationMapper extends BaseMapper<Conversation> {
     /** 同一可见性条件下的会话总数。 */
     long countSearch(@Param("owner") UUID owner, @Param("pattern") String pattern);
 
-    /** 锁定已过期且无活跃回合的下一批会话；仅系统留存任务调用。 */
+    /** 锁定已过期且无有效活跃回合的下一批会话，包含超过三分钟的遗留回合；仅系统留存任务调用。 */
     List<Conversation> expired(@Param("cutoff") OffsetDateTime cutoff);
     /** 清空消息正文与工具原文，包含以前已逻辑删除行。 */
     void eraseMessages(@Param("id") UUID id);

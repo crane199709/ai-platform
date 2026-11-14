@@ -14,6 +14,7 @@ import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.prompt.service.PromptService;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.skill.service.SkillService;
+import io.saasforge.ai.usage.service.UsageService;
 import io.saasforge.sdk.core.CurrentTenant;
 import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.core.api.ForgeException;
@@ -31,6 +32,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 public class ConversationService {
     private final ConversationMapper conversations;
+    private final UsageService usage;
     private final AgentRuntime runtime;
     private final ConversationMessageMapper messages;
     private final ModelSelectionService models;
@@ -48,7 +50,9 @@ public class ConversationService {
             ConversationTurnMapper turns,
             SkillService skills,
             McpSelectionService mcp,
-            AgentRuntime runtime) {
+            AgentRuntime runtime,
+            UsageService usage) {
+        this.usage = usage;
         this.runtime = runtime;
         this.mcp = mcp;
         this.skills = skills;
@@ -141,6 +145,10 @@ public class ConversationService {
     public int expire(OffsetDateTime cutoff) {
         var rows = conversations.expired(cutoff);
         for (var row : rows) {
+            if (row.getActiveTurnId() != null) {
+                // 进程异常退出没有终态回调；会话锁内先保留已发生计量，再清除过期正文。
+                usage.finish(row.getActiveTurnId(), null, null, null, false, 0, "INTERRUPTED");
+            }
             erase(row.getId());
         }
         return rows.size();

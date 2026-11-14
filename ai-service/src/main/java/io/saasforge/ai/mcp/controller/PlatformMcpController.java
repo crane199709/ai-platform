@@ -3,10 +3,10 @@ package io.saasforge.ai.mcp.controller;
 import io.saasforge.ai.mcp.model.McpCatalogRequest;
 import io.saasforge.ai.mcp.model.McpCatalogResponse;
 import io.saasforge.ai.mcp.model.McpCatalogVersionResponse;
-import io.saasforge.ai.mcp.model.McpStatusRequest;
 import io.saasforge.ai.mcp.service.McpCatalogService;
 import io.saasforge.sdk.core.api.ApiResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -70,4 +70,6 @@ public class PlatformMcpController {
     public ApiResponse<McpCatalogResponse> status(@PathVariable UUID id, @Valid @RequestBody McpStatusRequest request) {
         return ApiResponse.ok(catalog.status(id, request.enabled()));
     }
+
+    public record McpStatusRequest(@NotNull Boolean enabled) {}
 }

@@ -6,6 +6,11 @@
         FROM contract_record WHERE id = #{id} AND NOT deleted
     </select>
     <update id="ageConversation">UPDATE ai_conversation SET updated_at=CURRENT_TIMESTAMP - INTERVAL '100' DAY WHERE id=#{id}</update>
+    <update id="abandonTurn">UPDATE ai_conversation_turn SET status='RUNNING',error_code=NULL,created_at=CURRENT_TIMESTAMP - INTERVAL '5' MINUTE WHERE id=#{id}</update>
+    <update id="abandonUsage">UPDATE ai_usage_ledger SET status='RUNNING',outcome=NULL,created_at=CURRENT_TIMESTAMP - INTERVAL '5' MINUTE WHERE id=#{id}</update>
+    <update id="activateOldConversation">UPDATE ai_conversation SET active_turn_id=#{turn},updated_at=CURRENT_TIMESTAMP - INTERVAL '100' DAY WHERE id=#{id}</update>
+    <select id="remainingConversationConfiguration" resultType="long">SELECT COUNT(*) FROM ai_conversation WHERE id=#{id} AND (NOT deleted OR title &lt;&gt; '' OR instructions &lt;&gt; '' OR skill_snapshot &lt;&gt; '[]' OR mcp_snapshot &lt;&gt; '[]' OR active_turn_id IS NOT NULL)</select>
+    <select id="usageStatus" resultType="string">SELECT status FROM ai_usage_ledger WHERE id=#{id} AND NOT deleted</select>
     <select id="remainingConversationContent" resultType="long">
         SELECT COUNT(*) FROM ai_conversation_message WHERE conversation_id=#{id} AND (content &lt;&gt; '' OR tool_calls &lt;&gt; '[]' OR NOT deleted)
     </select>

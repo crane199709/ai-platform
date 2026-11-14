@@ -4,13 +4,12 @@ import { useAccessControl } from '@crane199709/sdk'
 import { PageToolbar, overlaySize } from '@crane199709/ui'
 import type { Skill, SkillVersion } from './contracts'
 import { errorTip, isAbort, json, useTenantScope } from './tenant-scope'
+import { useManagementAction } from './management-action'
 const { api, signal } = useTenantScope()
+const { saving, error, success, action } = useManagementAction(signal)
 const access = useAccessControl()
 const rows = ref<Skill[]>([])
 const loading = ref(false)
-const saving = ref(false)
-const error = ref('')
-const success = ref('')
 const selected = ref<Skill>()
 const enabled = ref(false)
 const editor = ref(false)
@@ -27,18 +26,7 @@ async function load() {
   }
 }
 onMounted(load)
-async function action(task: () => Promise<void>) {
-  saving.value = true
-  error.value = ''
-  success.value = ''
-  try {
-    await task()
-  } catch (e) {
-    if (!isAbort(e)) error.value = errorTip(e)
-  } finally {
-    if (!signal.aborted) saving.value = false
-  }
-}
+
 function edit(row: Skill) {
   selected.value = row
   enabled.value = row.draftEnabled

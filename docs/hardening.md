@@ -29,7 +29,7 @@ Sub-App 搜索及加载更多使用 Shell TenantClient.page；下载使用 Tenan
 
 部署配置 `ai.retention.default-days` 默认 90，`ai.retention.plan-days.<planCode>` 与 `ai.retention.tenant-days.<tenantUUID>` 均为正整数。优先级：tenant override → 已同步 Plan code → default；没有 Plan 副本时使用默认值。截止点以 `forge.business-zone` 的当前时间减天数、会话最后更新时间计算。
 
-`ai-conversation-retention` 全局任务每小时通过 IAM `/internal/tenants` 的 Service Credential 分页枚举 pending/trial/active/suspended/expired/archived/deleted。普通 TenantTask 不覆盖停用租户，因此不用于此处。每个租户先绑定 CurrentTenant 再开启事务，以 100 条批次锁定到期且无活跃回合的会话；仅到期清理使用 TenantWriteGuard 的窄维护豁免，RLS 不变。IAM 已逻辑删除的租户仍由 TenantDeleted 事件兜底。
+`ai-conversation-retention` 全局任务每小时通过 IAM `/internal/tenants` 的 Service Credential 分页枚举 pending/trial/active/suspended/expired/archived/deleted。普通 TenantTask 不覆盖停用租户，因此不用于此处。每个租户先绑定 CurrentTenant 再开启事务，以 100 条批次锁定到期且无有效活跃回合的会话。关联回合创建时间超过三分钟的遗留 active 标记按中断处理：在同一会话锁和事务内先结算用量账本、保留已发生 token/工具计数和未知估计，再清空正文、配置及恢复快照。有效窗口内的活跃回合仍跳过，无需用户再次发消息或查询用量触发恢复；仅到期清理使用 TenantWriteGuard 的窄维护豁免，RLS 不变。IAM 已逻辑删除的租户仍由 TenantDeleted 事件兜底。
 
 用户删除自己的会话与到期清理共用正文清空路径。TenantDeleted 由公开 SDK 的唯一 handler 验证租户并在同一消费事务内调用 AiTenantDataCleaner：先取消活跃任务、关闭审批并撤销能力，确认 Runner home 清理成功，再清理会话/消息/回合及私有恢复快照、Prompt 及历史版本、租户 Skill/MCP 及版本/工具授权、模型选择与用量四表。包括以前逻辑删除的正文和 secret_ref；平台目录与审计元数据保留。Runner 失败抛出，消费事务回滚且 MQ 重投；重复清理幂等。
 

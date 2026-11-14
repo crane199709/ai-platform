@@ -5,7 +5,6 @@ import io.saasforge.ai.prompt.model.PreviewPromptResponse;
 import io.saasforge.ai.prompt.model.PromptOptionResponse;
 import io.saasforge.ai.prompt.model.PromptResponse;
 import io.saasforge.ai.prompt.model.PromptVersionResponse;
-import io.saasforge.ai.prompt.model.RenderPromptRequest;
 import io.saasforge.ai.prompt.model.ResolvedPromptResponse;
 import io.saasforge.ai.prompt.model.SavePromptRequest;
 import io.saasforge.ai.prompt.service.PromptService;
@@ -15,7 +14,11 @@ import io.saasforge.sdk.security.RequiresPermission;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -116,5 +119,14 @@ public class PromptController {
     @RequiresPermission("ai:conversation:use")
     public ApiResponse<ResolvedPromptResponse> renderDefault(@Valid @RequestBody RenderPromptRequest request) {
         return ApiResponse.ok(prompts.resolvePublished(null, request.version(), request.variables()));
+    }
+
+    public record RenderPromptRequest(
+            @Positive Integer version,
+            @NotNull @Size(max = 64) Map<String, String> variables) {
+        @Override
+        public String toString() {
+            return "RenderPromptRequest[values omitted]";
+        }
     }
 }

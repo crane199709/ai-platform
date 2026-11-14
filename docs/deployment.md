@@ -43,7 +43,7 @@ Runner进程不继承模型/MCP密钥、用户JWT或用户home。只读官方pro
 6. Plan Feature Pack加入AI权限与subApps=`ai`，向实际租户分配Plan，给成员分配`ai-user`/`ai-admin`模板或自定义角色。现有租户按平台流程配置。**SDK角色模板不附带DataPolicy**；需要调用MCP时管理员须在IAM角色中为`ai_mcp_tool`配置合适的all/self/custom范围，否则默认拒绝，普通聊天不受影响。
 7. `GET /ai/usage`必须显示 `quotaKnown=true`与真实额度。未知Plan返回503 `usage.planUnavailable`。给同一租户重新分配同一个Plan不会广播；可信补同步方式是通过现有平台API读出Plan完整内容，原样重新保存该Plan，产生新版本事件。不得新增任意bootstrap API或自行猜不限额。
 
-保留策略通过 `ai.retention.default-days`（默认90）、`plan-days.<planCode>`、`tenant-days.<UUID>` 正整数配置，优先级租户>Plan>默认。IAM目录任务覆盖所有状态的租户。租户删除清理产品数据和Runnerhome，审计元数据按平台策略保留。详情见[会话契约](conversation-api.md)。
+保留策略通过 `ai.retention.default-days`（默认90）、`plan-days.<planCode>`、`tenant-days.<UUID>` 正整数配置，优先级租户>Plan>默认。IAM目录任务覆盖所有状态的租户，并处理超过三分钟的遗留活跃回合；有效活跃回合继续受保护。租户删除清理产品数据和Runnerhome，审计元数据按平台策略保留。详情见[会话契约](conversation-api.md)。
 
 ## 构建与发布
 

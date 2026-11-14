@@ -40,7 +40,7 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
     }
     if ((scenario.startsWith('tool') || scenario === 'skill') && requests.length === 1) {
       res.end(
-        `data: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: scenario === 'skill' ? 'skill' : scenario === 'tool-alias' ? (JSON.parse(body).tools[0].function.name as string) : 'mcp__ai_service__lookup', arguments: scenario === 'skill' ? '{"name":"approved-summary"}' : '{"query":"status"}' } }] }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: scenario === 'skill' ? 'skill' : scenario === 'tool-alias' ? (JSON.parse(body).tools[0].function.name as string) : 'mcp__ai_service__lookup', arguments: scenario === 'skill' ? '{"name":"approved-summary"}' : '{"query":"status"}' } }] }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], ...(scenario === 'tool-complete' ? { usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 } } : {}) })}\n\ndata: [DONE]\n\n`,
       )
       return
     }
@@ -51,7 +51,7 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
     res.end(
-      `data: ${JSON.stringify({ id: 'chat-1', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9, ...(scenario === 'cache' ? { prompt_tokens_details: { cached_tokens: 3 } } : {}) } })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ id: 'chat-1', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], ...(scenario === 'no-usage' ? {} : { usage: { prompt_tokens: scenario === 'zero-usage' ? 0 : 7, ...(scenario === 'incomplete-usage' ? {} : { completion_tokens: scenario === 'zero-usage' ? 0 : 2 }), total_tokens: scenario === 'zero-usage' ? 0 : 9, ...(scenario === 'cache' ? { prompt_tokens_details: { cached_tokens: 3 } } : {}) } }) })}\n\ndata: [DONE]\n\n`,
     )
   })
   provider.listen(0, '127.0.0.1')
@@ -117,6 +117,44 @@ test(
     assert.match(events, /event: completed/)
     assert.equal(requests.length, 1)
     assert.deepEqual(requests[0].tools ?? [], [])
+  },
+)
+
+test(
+  'real DSH marks absent provider usage as unknown despite its synthetic zero object',
+  { timeout: 30000 },
+  async (t) => {
+    const { call, requests } = await fixture(t, 'no-usage')
+    assert.equal((await call('/sessions', 'POST', { sessionId: 'unknown', model: 'test-model' })).status, 201)
+    const events = await (await call('/sessions/unknown/messages', 'POST', {
+      text: 'hello', contextToken: 'unknown-context',
+    })).text()
+    assert.match(events, /event: completed/)
+    assert.match(events, /"usageReported":false/)
+    assert.equal(requests.length, 1)
+  },
+)
+
+test(
+  'real DSH accepts explicit zero usage and requires complete reporting for every model request in a tool turn',
+  { timeout: 30000 },
+  async (t) => {
+    for (const scenario of ['zero-usage', 'incomplete-usage', 'tool-mixed', 'tool-complete']) {
+      const { call, requests } = await fixture(t, scenario)
+      assert.equal((await call('/sessions', 'POST', {
+        sessionId: scenario, model: 'test-model',
+        tools: scenario.startsWith('tool') ? [{ name: 'lookup', description: 'lookup status',
+          inputSchema: { type: 'object' }, readOnly: true }] : [],
+      })).status, 201)
+      const events = await (await call(`/sessions/${scenario}/messages`, 'POST', {
+        text: 'hello', contextToken: 'usage-context',
+      })).text()
+      assert.match(events, /event: completed/)
+      assert.match(events, ['tool-mixed', 'incomplete-usage'].includes(scenario) ? /"usageReported":false/ : /"usageReported":true/)
+      assert.equal(requests.length, scenario.startsWith('tool') ? 2 : 1)
+      if (scenario === 'zero-usage') assert.match(events, /"inputTokens":0,"outputTokens":0/)
+      if (scenario === 'tool-complete') assert.match(events, /"inputTokens":14,"outputTokens":4/)
+    }
   },
 )
 

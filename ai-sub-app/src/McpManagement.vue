@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useAccessControl } from '@crane199709/sdk'
 import { PageToolbar, formatDateTime, overlaySize } from '@crane199709/ui'
 import { errorTip, isAbort, json, useTenantScope } from './tenant-scope'
+import { useManagementAction } from './management-action'
 interface Tool {
   name: string
   description: string
@@ -32,14 +33,12 @@ interface Version {
   current: boolean
 }
 const { api, signal } = useTenantScope()
+const { saving, error, success, action } = useManagementAction(signal)
 const access = useAccessControl()
 const catalog = ref<Catalog[]>([])
 const availableTools = ref<{ catalogId: string; nativeName: string }[]>([])
 const configurations = ref<Configuration[]>([])
 const loading = ref(false)
-const error = ref('')
-const success = ref('')
-const saving = ref(false)
 const editor = ref(false)
 const selected = ref<Catalog>()
 const enabled = ref(false)
@@ -65,18 +64,7 @@ async function load() {
   }
 }
 onMounted(load)
-async function action(task: () => Promise<void>) {
-  saving.value = true
-  error.value = ''
-  success.value = ''
-  try {
-    await task()
-  } catch (e) {
-    if (!isAbort(e)) error.value = errorTip(e)
-  } finally {
-    if (!signal.aborted) saving.value = false
-  }
-}
+
 function edit(row: Catalog) {
   selected.value = row
   const draft = config(row.id)
@@ -124,7 +112,7 @@ async function rollback(version: number) {
     <el-alert v-if="success" :title="success" type="success" :closable="false" />
     <PageToolbar><el-tag>平台审核 · 只读工具</el-tag></PageToolbar>
     <el-alert
-      title="工具还需成员权限与 ai_mcp_tool 数据范围授权；请在角色管理配置 all、self 或自定义范围。启用目录不会自动授予工具访问权。"
+      title="工具还需成员权限与 AI 工具的数据范围授权；请在角色管理配置“全部”“本人”或自定义范围。启用目录不会自动授予工具访问权。"
       type="info"
       :closable="false"
     />

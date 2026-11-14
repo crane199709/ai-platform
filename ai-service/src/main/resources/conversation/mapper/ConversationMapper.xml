@@ -22,8 +22,11 @@
         <include refid="visibleSearch"/>
     </select>
     <select id="expired" resultType="io.saasforge.ai.conversation.entity.Conversation">
-        SELECT * FROM ai_conversation WHERE NOT deleted AND active_turn_id IS NULL AND updated_at &lt; #{cutoff}
-        ORDER BY id LIMIT 100 FOR UPDATE
+        SELECT c.* FROM ai_conversation c WHERE NOT c.deleted AND c.updated_at &lt; #{cutoff}
+        AND (c.active_turn_id IS NULL OR EXISTS (
+        SELECT 1 FROM ai_conversation_turn t WHERE t.id=c.active_turn_id AND t.conversation_id=c.id
+        AND t.tenant_id=c.tenant_id AND NOT t.deleted AND t.created_at &lt; CURRENT_TIMESTAMP - INTERVAL '3' MINUTE))
+        ORDER BY c.id LIMIT 100 FOR UPDATE
     </select>
     <update id="eraseMessages">
         UPDATE ai_conversation_message SET content='',tool_calls='[]',tool_name=NULL,deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL

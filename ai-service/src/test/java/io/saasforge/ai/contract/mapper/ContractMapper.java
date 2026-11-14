@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import io.saasforge.ai.contract.entity.ContractRecord;
 import java.util.UUID;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
 /** 接入验收专用；不启用成员 Data Policy，普通 CRUD 仍受租户拦截和 RLS 约束。 */
 @Mapper
@@ -14,6 +15,16 @@ public interface ContractMapper extends BaseMapper<ContractRecord> {
     ContractRecord readWithRlsOnly(UUID id);
 
     void ageConversation(UUID id);
+
+    void abandonTurn(UUID id);
+
+    void abandonUsage(UUID id);
+
+    void activateOldConversation(@Param("id") UUID id, @Param("turn") UUID turn);
+
+    long remainingConversationConfiguration(UUID id);
+
+    String usageStatus(UUID id);
 
     long remainingConversationContent(UUID id);
 

@@ -1,7 +1,7 @@
 // Only external model/MCP boundaries are deterministic; Java, DSH and IAM stay real.
 import { createServer } from 'node:https'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-const evidence = { modelRequests: 0, mcpCalls: 0, streamedChunks: 0, modelAuthorizationValid: true }
+const evidence = { modelRequests: 0, mcpCalls: 0, streamedChunks: 0, modelAuthorizationValid: true, usageScenarios: [] }
 const server = createServer({ key: readFileSync(process.env.AI_E2E_TLS_KEY), cert: readFileSync(process.env.AI_E2E_TLS_CERT) }, async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
   const body = raw ? JSON.parse(raw) : {}
@@ -18,25 +18,27 @@ const server = createServer({ key: readFileSync(process.env.AI_E2E_TLS_KEY), cer
     const messages = body.messages ?? []
     const lastUser = [...messages].reverse().find((item) => item.role === 'user')?.content ?? ''
     const last = messages.at(-1)
-    const wantsTool = String(lastUser).includes('APPROVAL_TOOL') && last?.role !== 'tool'
+    const usageScenario = { 'local-usage-zero': 'USAGE_ZERO', 'local-usage-missing': 'USAGE_MISSING', 'local-usage-mixed': 'USAGE_MIXED' }[body.model]
+    if (usageScenario) evidence.usageScenarios.push(usageScenario)
+    const wantsTool = (String(lastUser).includes('APPROVAL_TOOL') || usageScenario === 'USAGE_MIXED') && last?.role !== 'tool'
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
     const frame = (delta, finish_reason = null, usage) => res.write(`data: ${JSON.stringify({ id: 'local-chat', object: 'chat.completion.chunk', model: body.model, choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`)
     if (wantsTool) {
       const name = body.tools?.find((tool) => tool.function?.name?.startsWith('mcp__ai_service__'))?.function.name
       frame({ tool_calls: [{ index: 0, id: 'call-approval', type: 'function', function: { name, arguments: '{"query":"status"}' } }] })
-      frame({}, 'tool_calls', { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })
+      frame({}, 'tool_calls', usageScenario === 'USAGE_MIXED' ? undefined : { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })
     } else {
       for (const [index, content] of ['真实 DSH ', last?.role === 'tool' ? '已完成只读工具查询。' : '分批回答已完成。'].entries()) {
         frame({ content }); evidence.streamedChunks++
         // 浏览器先确认部分正文与取消入口，再释放普通回答的后半段。
-        if (index === 0 && !String(lastUser).includes('APPROVAL_TOOL') && process.env.AI_E2E_STREAM_RELEASE) {
+        if (index === 0 && !String(lastUser).includes('APPROVAL_TOOL') && !usageScenario && process.env.AI_E2E_STREAM_RELEASE) {
           const deadline = Date.now() + 30000
           while (!existsSync(process.env.AI_E2E_STREAM_RELEASE) && !res.destroyed && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
           if (existsSync(process.env.AI_E2E_STREAM_RELEASE)) unlinkSync(process.env.AI_E2E_STREAM_RELEASE)
         }
         await new Promise((resolve) => setTimeout(resolve, 350))
       }
-      frame({}, 'stop', { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })
+      frame({}, 'stop', usageScenario === 'USAGE_MISSING' ? undefined : usageScenario === 'USAGE_ZERO' ? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } : { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })
     }
     res.end('data: [DONE]\n\n')
   } else { res.writeHead(404).end() }

@@ -12,7 +12,8 @@ AI Platform is a separate product repository, integrated through **public Forge 
 - Platform model catalogs and tenant model selection, with DeepSeek and OpenAI-compatible HTTPS endpoints.
 - Drafts, published versions, history and rollback for Prompt, Skill and MCP configuration; conversations capture published snapshots.
 - AI service tool proxy with real IAM RBAC/ABAC. v1 tools are read-only; sensitive calls require approval by the active user.
-- Monthly token quotas, estimated reservations for unknown usage, daily cumulative reports to the platform, and metadata audits without content or secrets.
+- Monthly token quotas, estimated reservations for unknown usage, daily cumulative platform reports, and metadata audits without content or secrets. Every model request needs complete provider usage; partially reported tool turns retain their estimate, while explicit valid zero usage settles normally.
+- A background task clears expired conversation content and configuration after 90 days by default. It handles stale turns left by abnormal shutdowns while protecting active turns within their execution window.
 - A DSH process and private home per tenant, bounded pool capacity and idle cleanup, with recovery from the authoritative Java DB transcript.
 
 Knowledge bases, write tools, Squad and customer-facing assistants are outside v1. See the [specification](.scratch/ai-platform/spec.md).

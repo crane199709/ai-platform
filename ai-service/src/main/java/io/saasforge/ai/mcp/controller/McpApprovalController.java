@@ -1,11 +1,11 @@
 package io.saasforge.ai.mcp.controller;
 
-import io.saasforge.ai.mcp.model.McpApprovalDecisionRequest;
 import io.saasforge.ai.mcp.model.McpApprovalDecisionResponse;
 import io.saasforge.ai.mcp.service.McpToolApprovalService;
 import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.security.RequiresPermission;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,4 +28,6 @@ public class McpApprovalController {
             @PathVariable UUID id, @Valid @RequestBody McpApprovalDecisionRequest request) {
         return ApiResponse.ok(approvals.decide(id, request.approved()));
     }
+
+    public record McpApprovalDecisionRequest(@NotNull Boolean approved) {}
 }

@@ -7,6 +7,7 @@ import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.security.RequiresPermission;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
@@ -70,4 +71,6 @@ public class TenantSkillController {
             @PathVariable UUID id, @Valid @RequestBody SkillRollbackRequest request) {
         return ApiResponse.ok(skills.rollback(id, request.version()));
     }
+
+    public record SkillEnableRequest(@NotNull Boolean enabled) {}
 }

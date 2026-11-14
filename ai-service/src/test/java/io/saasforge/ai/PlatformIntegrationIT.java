@@ -793,6 +793,99 @@ class PlatformIntegrationIT {
     }
 
     @Test
+    void retentionRecoversAbandonedActiveMarkerWithoutDeletingValidActiveTurns() throws Exception {
+        String model = createConversationModel();
+        String stale = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "crash abandoned", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        sendMessage(stale, "crash partial", UUID.randomUUID().toString(), tokenA);
+        UUID turn = UUID.fromString(
+                call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + stale, tokenA, null, 200)
+                        .path("data")
+                        .path("turns")
+                        .get(0)
+                        .path("id")
+                        .asText());
+        var before = usage(tokenA);
+        CurrentTenant.run(
+                TENANT_A,
+                () -> new TransactionTemplate(usageTransactions).executeWithoutResult(status -> {
+                    hardeningData.abandonTurn(turn);
+                    hardeningData.abandonUsage(turn);
+                    hardeningData.activateOldConversation(UUID.fromString(stale), turn);
+                }));
+        String active = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "valid active", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var stream = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder(
+                                        URI.create(platform.gateway() + "/ai/conversations/" + active + "/messages"))
+                                .header("Authorization", "Bearer " + tokenA)
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString(JsonMapper.builder()
+                                        .build()
+                                        .writeValueAsString(Map.of(
+                                                "text",
+                                                "slow",
+                                                "idempotencyKey",
+                                                UUID.randomUUID().toString()))))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofInputStream());
+        try (var reader = new BufferedReader(new InputStreamReader(stream.body(), StandardCharsets.UTF_8))) {
+            while (true) {
+                String line = reader.readLine();
+                assertThat(line).isNotNull();
+                if (line.contains("partial")) {
+                    break;
+                }
+            }
+            CurrentTenant.run(
+                    TENANT_A,
+                    () -> new TransactionTemplate(usageTransactions)
+                            .executeWithoutResult(status -> hardeningData.ageConversation(UUID.fromString(active))));
+            retention.run();
+            var valid = call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + active, tokenA, null, 200)
+                    .path("data");
+            assertThat(valid.path("activeTurnId").asText()).isNotBlank();
+            assertThat(valid.path("messages").get(0).path("content").asText()).isEqualTo("slow");
+            call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + stale, tokenA, null, 404);
+            CurrentTenant.run(TENANT_A, () -> {
+                assertThat(hardeningData.remainingConversationContent(UUID.fromString(stale)))
+                        .isZero();
+                assertThat(hardeningData.remainingConversationConfiguration(UUID.fromString(stale)))
+                        .isZero();
+                assertThat(hardeningData.recoverySnapshot(turn)).isEqualTo("[]");
+                assertThat(hardeningData.usageStatus(turn)).isEqualTo("FINISHED");
+                assertThat(hardeningData.modelCalls(turn)).isEqualTo(2);
+            });
+            var after = usage(tokenA);
+            assertThat(after.path("totalTokens").asLong())
+                    .isEqualTo(before.path("totalTokens").asLong());
+            assertThat(after.path("estimatedTokens").asLong())
+                    .isGreaterThanOrEqualTo(before.path("estimatedTokens").asLong());
+            assertThat(after.path("turnCount").asLong())
+                    .isEqualTo(before.path("turnCount").asLong() + 1);
+        } finally {
+            call(platform.gateway(), HttpMethod.POST, "/ai/conversations/" + active + "/cancel", tokenA, Map.of(), 200);
+        }
+    }
+
+    @Test
     void poolAdmissionReturnsActual429WithRetryAfterAndCompletedKeyDoesNotReadmit() throws Exception {
         String model = createConversationModel();
         String id = call(

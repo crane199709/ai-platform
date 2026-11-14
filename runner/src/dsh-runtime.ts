@@ -31,7 +31,7 @@ interface Turn {
   contextToken: string
   emit: (event: RuntimeEvent) => void
   usage: Usage
-  usageReported: boolean
+  modelUsageReported: boolean[]
   finish: (error?: Error) => void
   abort: AbortController
   toolNames: Map<string, string>
@@ -133,6 +133,7 @@ export class DshRuntime implements AgentRuntime {
           chunks.push(chunk)
         }
         turn.attemptId = randomUUID()
+        const modelRequest = turn.modelUsageReported.push(false) - 1
         const upstream = await fetch(`${this.options.proxyUrl}/chat/completions`, {
           method: 'POST',
           redirect: 'error',
@@ -166,6 +167,9 @@ export class DshRuntime implements AgentRuntime {
             } catch {
               continue
             }
+            // 固定 pi-ai 会合成零 usage；完整性只取每次提供方响应的原始计量证据。
+            const rawUsage = data.usage ?? data.choices?.[0]?.usage
+            if (rawUsage != null) turn.modelUsageReported[modelRequest] = providerUsageReported(rawUsage)
             for (const choice of data.choices ?? [])
               if (typeof choice.delta?.content === 'string')
                 turn.emit({ type: 'delta', data: { text: choice.delta.content } })
@@ -355,7 +359,7 @@ export class DshRuntime implements AgentRuntime {
           contextToken: input.contextToken,
           emit,
           usage: { inputTokens: 0, outputTokens: 0 },
-          usageReported: false,
+          modelUsageReported: [],
           abort: new AbortController(),
           toolNames: new Map(),
           finish: (error) => (error ? reject(error) : resolve()),
@@ -381,7 +385,7 @@ export class DshRuntime implements AgentRuntime {
         data: {
           ...this.exportSession(sessionId),
           usage: turn.usage,
-          usageReported: turn.usageReported,
+          usageReported: turn.modelUsageReported.length > 0 && turn.modelUsageReported.every(Boolean),
         },
       })
     } catch (error) {
@@ -406,7 +410,6 @@ export class DshRuntime implements AgentRuntime {
       const content = textContent(data.message?.content)
       if (content) session.transcript.push({ role: 'assistant', content })
       if (data.usage) {
-        turn.usageReported = true
         turn.usage.inputTokens +=
           Number(data.usage.inputTokens ?? 0) +
           Number(data.usage.cacheReadTokens ?? 0) +
@@ -524,4 +527,16 @@ function textContent(content: any): string {
         .map((block) => block.text)
         .join('')
     : ''
+}
+
+function providerUsageReported(usage: any): boolean {
+  const input = usage.prompt_tokens
+  const output = usage.completion_tokens
+  const cached =
+    usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? usage.cached_tokens ?? 0
+  const written = usage.prompt_tokens_details?.cache_write_tokens ?? 0
+  return (
+    [input, output, cached, written].every((value) => Number.isSafeInteger(value) && value >= 0) &&
+    cached + written <= input
+  )
 }

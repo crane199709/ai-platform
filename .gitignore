@@ -1,0 +1,13 @@
+node_modules/
+dist/
+target/
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+*.jwk
+*.pem
+*.log
+.DS_Store
+.flattened-pom.xml

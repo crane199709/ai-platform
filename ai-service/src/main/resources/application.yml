@@ -1,0 +1,60 @@
+server:
+  forward-headers-strategy: framework
+  # 业务服务部署端口：平台运维
+  port: ${FORGE_SERVICE_PORT}
+spring:
+  application:
+    name: ai-service
+  config:
+    import: optional:nacos:forge-common.yaml
+  cloud:
+    nacos:
+      # 配置与服务发现地址：平台运维（接入清单第 4 步）
+      server-addr: ${FORGE_NACOS_ADDR}
+  datasource:
+    # JDBC URL、运行账号与密码：数据库准备步骤；URL 包含数据库名
+    url: ${FORGE_DB_URL}
+    username: ${FORGE_DB_USER}
+    password: ${FORGE_DB_PASSWORD}
+  flyway:
+    # 迁移账号、密码与 schema：接入清单数据库步骤；运行账号不得持有表
+    user: ${FORGE_DB_MIGRATOR_USER}
+    password: ${FORGE_DB_MIGRATOR_PASSWORD}
+    schemas: ${FORGE_DB_SCHEMA}
+    default-schema: ${FORGE_DB_SCHEMA}
+    create-schemas: false
+    placeholders:
+      serviceSchema: ${FORGE_DB_SCHEMA}
+  data:
+    redis:
+      # 平台共享 Redis：平台运维提供，权限明细由 IAM 发布
+      host: ${FORGE_REDIS_HOST}
+      port: ${FORGE_REDIS_PORT}
+forge:
+  ops:
+    # 仅注入本服务的令牌；Platform 在统一映射中配置同一个值。
+    token: ${FORGE_OPS_TOKEN}
+  security:
+    # Tenant Realm 签发者（网关公开地址）与直连 IAM JWKS 地址：平台运维
+    issuer: ${FORGE_SECURITY_ISSUER}
+    jwk-set-uri: ${FORGE_SECURITY_JWK_SET_URI}
+  # 使用统一脱敏执行通道时按 docs/standards/business-service.md 显式启用；导出列与日志参数按该规范接入。
+  # 在线 DTO 的 String 属性使用 @SensitiveField，嵌套/集合自动生效；独立原文操作按规范授权并审计。
+  # 导出每任务读取一次策略；日志异步刷新一秒快照，首次/过期丢值。无声明的旧服务不新增必配项。
+  # field-masking:
+  #   enabled: true
+  #   iam-uri: ${FORGE_IAM_URI}
+  #   token: ${FORGE_MANIFEST_TOKEN}
+  mq:
+    # RocketMQ Proxy gRPC 地址：接入清单 Topic 准备步骤
+    endpoints: ${FORGE_ROCKETMQ_ENDPOINTS}
+  # SDK 异步有限重试与补报；只读 /internal/onboarding-status 由独立 forge.ops.token 保护
+  manifest:
+    # 权限、菜单、Data Resource 或 sensitiveFields（含 @SensitiveField 注解）变化时递增。
+    version: 1
+    # IAM 内部地址；凭证由 Operator 在控制台登记，明文只显示一次，注入 FORGE_MANIFEST_TOKEN。
+    # 轮换先建新、部署验证、再停旧；无需修改或重启 IAM，不使用已弃用的静态 token Map。
+    iam-uri: ${FORGE_IAM_URI}
+    token: ${FORGE_MANIFEST_TOKEN}
+mybatis-plus:
+  mapper-locations: classpath*:/*/mapper/**/*.xml

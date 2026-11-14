@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 以 Forge BOM 为父 POM，继承 validate 阶段的 NeedBraces 与中间件依赖门禁。 -->
+    <parent>
+        <groupId>io.saasforge</groupId>
+        <artifactId>forge-dependencies</artifactId>
+        <version>0.2.0-SNAPSHOT</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>io.saasforge.ai</groupId>
+    <artifactId>ai-service</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>ai-service</name>
+    <description>基于 Forge SDK 的 Business Service</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <!-- 测试类按 2 个 JVM 并行，每个 JVM 共享一套容器（见 SharedContainers）；可用 -DforkCount 调整。 -->
+        <forkCount>2</forkCount>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-ops</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-architecture</artifactId>
+
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-tenant</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-abac</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-mq</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-provisioning</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-audit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-openapi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-manifest</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.saasforge</groupId>
+            <artifactId>forge-sdk-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- 按需接入 IO：添加 forge-sdk-io，并复制其当前 schema.sql 到新 Flyway 迁移；
+         已有 IO 服务按升级阶段复制 upgrade-import-backup.sql、upgrade-import-rollback-preview.sql 与 upgrade-import-rollback-execution.sql，
+         回滚须独立授权并读取当前数据权限，恢复仅写快照字段且与成功标记同事务，约定见 docs/standards/business-service.md。
+         默认 starter 不使用 IO，不预建可选表。 -->
+    <!-- 按需接入 storage：添加 forge-sdk-storage，复制当前 schema.sql 为 Flyway 迁移，
+         并在服务代码声明 StoragePurpose（可选 retentionDays，省略永久保留）；已有表升级复制 upgrade-purpose.sql、
+         upgrade-retention.sql，不修改旧迁移。delete 先失效，七天宽限期内不释放配额。
+         IO 上传复用 IoStoragePurposes.SOURCE。配置与示例见 docs/business-service-guide.md。 -->
+    <repositories>
+        <repository>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>always</updatePolicy>
+            </snapshots>
+            <id>forge-release</id>
+            <url>https://maven.pkg.github.com/crane199709/saas-forge</url>
+        </repository>
+    </repositories>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <image>
+                        <name>ai-service:0.1.0-SNAPSHOT</name>
+                    </image>
+                </configuration>
+            </plugin>
+            <!-- 格式规则由父 POM 管理（Java 用 palantir-java-format，POM 排序，资源 XML 统一缩进），verify 时检查 -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,5 @@
+ai-service/
+.forge-packages/
+.scratch/
+pnpm-lock.yaml
+ai-sub-app/docs/standards/

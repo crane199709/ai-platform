@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "ai:conversation:use": {
+      "name": "使用 AI 助手",
+      "group": "AI 工作台"
+    }
+  },
+  "menus": [
+    {
+      "code": "ai.workbench",
+      "name": "AI 工作台",
+      "icon": "chat-dot-round",
+      "app": "ai",
+      "path": "home",
+      "permission": "ai:conversation:use"
+    }
+  ]
+}

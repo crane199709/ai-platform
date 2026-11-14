@@ -1,0 +1,80 @@
+name: AI platform integration
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '45 2 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: ai-platform-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: ai-service/pom.xml
+      - name: Verify against published Forge snapshot
+        env:
+          FORGE_MAVEN_USERNAME: ${{ github.actor }}
+          FORGE_MAVEN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-published-sdk.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: service-test-reports
+          path: ai-service/target/surefire-reports/
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/check.sh runner
+  sub-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @forge/ai-sub-app exec playwright install --with-deps chromium
+      - run: bash scripts/check.sh sub-app
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sub-app-reports
+          path: |
+            ai-sub-app/playwright-report/
+            ai-sub-app/test-results/

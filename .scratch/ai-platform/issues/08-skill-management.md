@@ -4,13 +4,13 @@
 
 **Blocked by:** 02
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] 平台级 Skill 目录：编码、名称、说明、版本、文件内容/引用、状态
 - [x] 租户启用/停用 Skill；不能上传任意 Skill 代码（v1）
 - [x] 会话启动时把启用 Skill 物化到租户 DSH home 的 skills 目录
 - [x] 变更写审计；停用后新会话不再加载
-- [ ] 测试覆盖：启用/停用、物化内容、权限、跨租户隔离、停用后新会话不可见
+- [x] 测试覆盖：启用/停用、物化内容、权限、跨租户隔离、停用后新会话不可见
 
 ## Comments
 
@@ -33,4 +33,13 @@
 - 合入工单 07 前真实 IAM 单方法 `PlatformIntegrationIT#tenantSkillPublicationIsAuthorizedIsolatedVersionedAndAudited`：1/1，包含租户发布/回滚与平台发布的真实审计、不含正文断言；日志 `/private/tmp/ai08-green2.log`。
 - 合入工单 07 后真实 IAM 单方法 `PlatformIntegrationIT#tenantCannotDiscoverOrConfigureUnpublishedSkillDraft`：1/1；日志 `/private/tmp/ai08-boundary-final.log`。
 
-尚未完成的组合验收：完整 `PlatformIntegrationIT` 曾为 10 条中 7 通过、1 个上述边界红灯及 2 个审计超时（新增 Skill Tenant 审计与原有 Model Platform 审计均未读到事件），日志 `/private/tmp/ai08-platform-all-red3.log`。边界已修复并单独验证；审计超时已交协调代理 `merge07` 统一诊断，当前没有产品根因结论，不以单方法成功替代全量通过。按协调要求暂停重复全量 IT，后续 fresh merger08 合最新集成并执行组合验收、解决 Manifest 版本碰撞后再标 resolved。
+此前待闭环的组合验收：完整 `PlatformIntegrationIT` 曾为 10 条中 7 通过、1 个上述边界红灯及 2 个审计超时（新增 Skill Tenant 审计与原有 Model Platform 审计均未读到事件），日志 `/private/tmp/ai08-platform-all-red3.log`。边界已修复并单独验证；审计超时已交协调代理 `merge07` 统一诊断，当前没有产品根因结论，不以单方法成功替代全量通过。当时按协调要求暂停重复全量 IT；随后由当前集成 merger 顺序合并工单 07/08 并完成下述闭环。
+
+
+### 2026-11-14 集成 merger 联合验收完成
+
+- 已合入 `codex/ai-platform-v1` 的联合提交 `8a5f484`。保留 Skill 与 Prompt 全部权限、IAM seed 和 15 个真实 IT；Prompt 草稿独立使用 `ai:prompt:update`，Skill 保持 `ai:skill:update`，联合 Manifest 递增至 6。
+- 公共审计失败来自隔离 RocketMQ 的 128 MiB 堆外内存上限，Broker `POP checkpoint` 申请编码缓冲时抛 `OutOfDirectMemoryError`，并导致 Proxy 超时；Outbox 已发送而 IAM 尚未消费。证据 `/private/tmp/ai-prompt-combined-probe-evidence/pop.txt`。只把测试夹具堆外预算调为 512 MiB，保留全部真实权限与 60 秒审计断言，未改产品或 SDK。
+- 联合 `bash scripts/check.sh platform`（离线、真实 Forge 运行制品、forkCount=1）：**15/15 通过，0 跳过**，含 Skill 目录发布/回滚、Tenant 启停/草稿/历史/跨租户隔离、未发布内容边界、Tenant 发布/回滚审计与 Platform 发布审计；Model 与 Prompt 审计同时通过。日志 `/private/tmp/ai-prompt-skill-platform-direct512.log`，平台与 MQ 证据 `/private/tmp/ai-prompt-skill-direct512-evidence/`，新采样未见 OOM/POP 错误/Proxy 超时。
+- 最终 service verify：**9/9 通过**，含架构、HTTP、迁移/SDK 注释、格式及权限目录门禁；日志 `/private/tmp/ai-prompt-skill-service-final.log`。Runner 与 `57f09d9` 的已验收内容一致，沿用上述 **19/19** 真实 DSH/物化回归结果；本轮没有改 Runner。`git diff --check` 通过。
+- 会话创建时持久化并传递正式 `SkillService.resolvePublished()` 快照的接入由工单 04 完成，管理页面由工单 05 接入。本轮使用本机缓存 Forge 制品，未重跑排除缓存的已发布 SDK 下载验收。

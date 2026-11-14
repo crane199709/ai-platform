@@ -45,6 +45,13 @@ public class UsageService {
         this.recovery.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    public void eraseTenantData() {
+        mapper.erasePlan();
+        mapper.eraseMonth();
+        mapper.eraseLedger();
+        mapper.eraseDaily();
+    }
+
     /** 必须在会话事务开始之前恢复，避免旧回合结算已持月份锁时再开启新事务等待自身。 */
     public void recoverExpired() {
         recover(LocalDate.now(zone).withDayOfMonth(1));
@@ -96,11 +103,34 @@ public class UsageService {
         mapper.updateById(row);
         publish(row.getUsageDate());
     }
+    /** 重试前保存已发生但未取得完整用量的尝试；只保存保守上界，不将未知成本视为免费。 */
+    @Transactional
+    public void preserveUnsettled(UUID turnId) {
+        var row = mapper.selectById(turnId);
+        if (row == null) {
+            return;
+        }
+        lock(row.getBillingMonth());
+        row = mapper.selectById(turnId);
+        if (!"RUNNING".equals(row.getStatus())) {
+            return;
+        }
+        row.setPriorEstimatedTokens(row.getEstimatedTokens());
+        mapper.updateById(row);
+    }
+
+    /** 只读基线用于可替换运行时的执行证据；真实模型代理已经登记的调用不重复计数。 */
+    @Transactional(readOnly = true)
+    public long modelCallsSoFar(UUID turnId) {
+        var row = mapper.selectById(turnId);
+        return row == null ? 0 : row.getModelCalls();
+    }
+
     /** 已经收到模型输出/工具事件也是执行证据；适用于可替换的 AgentRuntime。 */
     @Transactional
-    public void observedExecution(UUID turnId) {
+    public void observedExecution(UUID turnId, long callsBeforeAttempt) {
         var row = mapper.selectById(turnId);
-        if (row != null && "RUNNING".equals(row.getStatus()) && row.getModelCalls() == 0) {
+        if (row != null && "RUNNING".equals(row.getStatus()) && row.getModelCalls() == callsBeforeAttempt) {
             modelAttempt(turnId);
         }
     }
@@ -156,12 +186,12 @@ public class UsageService {
         row.setStatus("FINISHED");
         row.setOutcome(outcome);
         row.setToolCalls(Math.max(row.getToolCalls(), tools));
-        row.setUnknownUsage(!complete && row.getModelCalls() > 0);
+        row.setUnknownUsage(row.getPriorEstimatedTokens() > 0 || (!complete && row.getModelCalls() > 0));
         if (complete) {
             row.setInputTokens(input);
             row.setOutputTokens(output);
             row.setCachedInputTokens(cached);
-            row.setEstimatedTokens(0);
+            row.setEstimatedTokens(row.getPriorEstimatedTokens());
         }
         mapper.updateById(row);
         publish(row.getUsageDate());

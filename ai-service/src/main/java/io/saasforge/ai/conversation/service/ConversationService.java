@@ -12,10 +12,16 @@ import io.saasforge.ai.conversation.model.CreateConversationRequest;
 import io.saasforge.ai.mcp.service.McpSelectionService;
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.prompt.service.PromptService;
+import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.skill.service.SkillService;
+import io.saasforge.sdk.core.CurrentTenant;
+import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.TenantContext;
+import io.saasforge.sdk.web.PageQuery;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -25,6 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 public class ConversationService {
     private final ConversationMapper conversations;
+    private final AgentRuntime runtime;
     private final ConversationMessageMapper messages;
     private final ModelSelectionService models;
     private final PromptService prompts;
@@ -40,7 +47,9 @@ public class ConversationService {
             PromptService prompts,
             ConversationTurnMapper turns,
             SkillService skills,
-            McpSelectionService mcp) {
+            McpSelectionService mcp,
+            AgentRuntime runtime) {
+        this.runtime = runtime;
         this.mcp = mcp;
         this.skills = skills;
         this.turns = turns;
@@ -85,14 +94,22 @@ public class ConversationService {
         return response(row, true);
     }
 
-    public List<ConversationResponse> list() {
-        return conversations
-                .selectList(new LambdaQueryWrapper<Conversation>()
-                        .eq(Conversation::getOwnerId, TenantContext.current().identityId())
-                        .orderByDesc(Conversation::getUpdatedAt, Conversation::getId))
-                .stream()
-                .map(r -> response(r, false))
+    @Transactional(readOnly = true)
+    public ApiResponse<List<ConversationResponse>> list(String query, PageQuery page) {
+        String pattern = query == null || query.isBlank()
+                ? null
+                : "%"
+                        + query.strip()
+                                .toLowerCase(Locale.ROOT)
+                                .replace("!", "!!")
+                                .replace("%", "!%")
+                                .replace("_", "!_")
+                        + "%";
+        UUID owner = TenantContext.current().identityId();
+        var rows = conversations.search(owner, pattern, page.size(), page.offset()).stream()
+                .map(row -> response(row, false))
                 .toList();
+        return ApiResponse.page(rows, page.toPageMeta(conversations.countSearch(owner, pattern)));
     }
 
     public ConversationResponse get(UUID id) {
@@ -113,9 +130,29 @@ public class ConversationService {
         if (row.getActiveTurnId() != null) {
             throw new ForgeException(ConversationErrorCode.BUSY);
         }
-        conversations.deleteById(id);
-        turns.delete(new LambdaQueryWrapper<ConversationTurn>().eq(ConversationTurn::getConversationId, id));
-        messages.delete(new LambdaQueryWrapper<ConversationMessage>().eq(ConversationMessage::getConversationId, id));
+        erase(id);
+    }
+
+    public void eraseTenantData() {
+        erase(null);
+    }
+
+    @Transactional
+    public int expire(OffsetDateTime cutoff) {
+        var rows = conversations.expired(cutoff);
+        for (var row : rows) {
+            erase(row.getId());
+        }
+        return rows.size();
+    }
+
+    private void erase(UUID id) {
+        if (id != null) {
+            runtime.deleteSession(CurrentTenant.require(), id);
+        }
+        conversations.eraseMessages(id);
+        conversations.eraseTurns(id);
+        conversations.eraseConversations(id);
     }
 
     public Conversation require(UUID id, boolean lock) {

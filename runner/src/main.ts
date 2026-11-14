@@ -1,6 +1,6 @@
-import { access, mkdir } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { createRunnerServer, createRunnerMetricsServer } from './server.js'
+import { createRunnerServer, createRunnerMetricsServer, prepareRunnerRoot } from './server.js'
 
 const host = process.env.AI_RUNNER_HOST
 const port = Number(process.env.AI_RUNNER_PORT)
@@ -11,10 +11,10 @@ if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !proxyUrl ||
     'AI_RUNNER_HOST, AI_RUNNER_PORT, AI_SERVICE_PROXY_URL and AI_RUNNER_ROOT are required',
   )
 }
-await mkdir(rootDir, { recursive: true, mode: 0o700 })
-await access(rootDir, constants.W_OK)
 const numberOption = (name: string) =>
   process.env[name] === undefined ? undefined : Number(process.env[name])
+await prepareRunnerRoot(rootDir)
+await access(rootDir, constants.W_OK)
 const server = createRunnerServer({
   serviceToken: process.env.AI_RUNNER_SERVICE_TOKEN ?? '',
   proxyUrl,

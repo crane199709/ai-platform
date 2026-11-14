@@ -22,6 +22,7 @@ import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.TenantContext;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -141,6 +142,45 @@ public class ConversationTurnService {
         record("ai.conversation.start", id);
         return new Prepared(conversation, turn, transcript, request.text(), false);
     }
+    /** 先提交真实失败尝试和未知成本，再允许以新能力重放；不追加第二条用户消息。 */
+    @Transactional
+    public String recordRecovery(
+            UUID conversationId,
+            UUID turnId,
+            String attemptId,
+            String content,
+            List<Map<String, Object>> tools,
+            List<AgentRuntime.TranscriptMessage> results) {
+        conversations.require(conversationId, true);
+        var turn = turns.selectById(turnId);
+        if (turn == null || !turn.getConversationId().equals(conversationId) || !"RUNNING".equals(turn.getStatus())) {
+            throw new ForgeException(ConversationErrorCode.BUSY);
+        }
+        String snapshot = buildRecoverySnapshot(turn.getRecoverySnapshot(), attemptId, content, tools, results);
+        turn.setRecoverySnapshot(snapshot);
+        turns.updateById(turn);
+        usage.preserveUnsettled(turnId);
+        return snapshot;
+    }
+
+    /** 落库保留最终 UTF-8 上限；重建准入失败时，同一尝试可安全重写。 */
+    private String buildRecoverySnapshot(
+            String previous,
+            String attemptId,
+            String content,
+            List<Map<String, Object>> tools,
+            List<AgentRuntime.TranscriptMessage> results) {
+        var snapshots = new ArrayList<JsonNode>(List.of(json.readValue(previous, JsonNode[].class)));
+        snapshots.removeIf(item -> item.path("attemptId").asText().equals(attemptId));
+        snapshots.add(json.valueToTree(
+                Map.of("attemptId", attemptId, "content", content, "tools", tools, "results", results)));
+        String snapshot = json.writeValueAsString(snapshots);
+        if (snapshot.getBytes(StandardCharsets.UTF_8).length > 2097152) {
+            throw new ForgeException(ConversationErrorCode.LIMIT);
+        }
+        return snapshot;
+    }
+
     /** 终态、消息与标准用量在同一事务提交；重复终态不追加消息或审计。 */
     @Transactional
     public boolean finish(

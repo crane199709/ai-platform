@@ -9,6 +9,17 @@ import tools.jackson.databind.JsonNode;
 
 /** Java 只依赖 Runner 的公开 HTTP 语义，不引用 DSH 内部模型。 */
 public interface AgentRuntime {
+    /** 流打开前的资源准入，不执行用户消息。 */
+    default void admit(Session session) {}
+    /** 使用数据库权威历史重建单个会话；由业务回合控制重放上限和授权。 */
+    default void restore(Session session) {
+        admit(session);
+    }
+    /** 租户删除时释放全部运行期文件；失败必须显式抛出以便清理消息重投。 */
+    default void deleteTenant(UUID tenantId) {}
+
+    default void deleteSession(UUID tenantId, UUID sessionId) {}
+
     void run(Run request, Consumer<Event> emit);
 
     boolean cancel(UUID tenantId, UUID sessionId);

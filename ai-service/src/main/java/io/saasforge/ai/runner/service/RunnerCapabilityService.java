@@ -88,6 +88,20 @@ public class RunnerCapabilityService {
         return context;
     }
 
+    /** 重试每次实际转发前再次校验原能力仍有效及 IAM 当前成员状态。 */
+    public void requireActive(GrantedContext context, String scope) {
+        String token = tokens.entrySet().stream()
+                .filter(entry -> entry.getValue() == context)
+                .map(java.util.Map.Entry::getKey)
+                .findFirst()
+                .orElseThrow(() -> new ForgeException(RunnerErrorCode.INVALID_CAPABILITY));
+        authorize(token, context.tenant().tenantId(), context.sessionId(), scope);
+    }
+
+    public void revokeTenant(UUID tenantId) {
+        tokens.entrySet().removeIf(entry -> entry.getValue().tenant().tenantId().equals(tenantId));
+    }
+
     public void revoke(String token) {
         if (token != null) {
             tokens.remove(token);

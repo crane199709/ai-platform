@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.saasforge.ai.mcp.mapper.McpConfigurationVersionMapper">
+    <update id="eraseTenantData">
+        UPDATE ai_tenant_mcp_version SET enabled=false,tool_names='',secret_ref=NULL,deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+    </update>
+</mapper>

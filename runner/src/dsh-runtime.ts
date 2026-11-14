@@ -26,6 +26,7 @@ interface Session {
   needsReplay: boolean
 }
 interface Turn {
+  attemptId: string
   sessionId: string
   contextToken: string
   emit: (event: RuntimeEvent) => void
@@ -131,6 +132,7 @@ export class DshRuntime implements AgentRuntime {
           if (size > 4 * 1024 * 1024) throw new RuntimeError('runner.outputLimit')
           chunks.push(chunk)
         }
+        turn.attemptId = randomUUID()
         const upstream = await fetch(`${this.options.proxyUrl}/chat/completions`, {
           method: 'POST',
           redirect: 'error',
@@ -281,10 +283,18 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   async createSession(input: SessionInput) {
-    if (this.sessions.has(input.sessionId)) throw new RuntimeError('runner.sessionExists', 409)
+    if (this.sessions.has(input.sessionId) && !input.replace) throw new RuntimeError('runner.sessionExists', 409)
     if (this.busy) throw new RuntimeError('runner.tenantBusy', 409)
     this.admitting = true
     try {
+      const existing = this.sessions.get(input.sessionId)
+      const same = existing && JSON.stringify([existing.model, existing.transcript, existing.instructions, existing.tools, existing.skills]) === JSON.stringify([input.model, input.transcript ?? [], input.instructions ?? '', input.tools ?? [], input.skills ?? []])
+      if (input.replace && same) {
+        await this.initialize(input.model, input.tools, input.instructions, input.skills)
+        return { sessionId: input.sessionId, model: input.model, recovery: existing.needsReplay ? 'context-replay' : 'none' }
+      }
+      // 替换只覆盖指定逻辑会话；同租户其他会话保留权威上下文并在进程重启后重放。
+      if (input.replace && existing) await this.stopProcess()
       await this.initialize(input.model, input.tools, input.instructions, input.skills)
       if (this.closed) throw new RuntimeError('runner.tenantClosed', 503, true)
       const runtimeId = randomUUID()
@@ -341,6 +351,7 @@ export class DshRuntime implements AgentRuntime {
       const done = new Promise<void>((resolve, reject) => {
         this.turn = {
           sessionId,
+          attemptId: randomUUID(),
           contextToken: input.contextToken,
           emit,
           usage: { inputTokens: 0, outputTokens: 0 },
@@ -409,7 +420,7 @@ export class DshRuntime implements AgentRuntime {
       turn.toolNames.set(data.callId, data.name)
       turn.emit({
         type: 'tool.call',
-        data: { name: data.name, callId: data.callId, arguments: data.arguments },
+        data: { attemptId: turn.attemptId, name: data.name, callId: data.callId, arguments: data.arguments },
       })
     } else if (event?.type === 'tool/result') {
       const content = textContent(data.message?.content)
@@ -423,6 +434,7 @@ export class DshRuntime implements AgentRuntime {
       turn.emit({
         type: 'tool.result',
         data: {
+          attemptId: turn.attemptId,
           callId: data.message?.toolCallId,
           name: turn.toolNames.get(data.message?.toolCallId),
           content,
@@ -436,6 +448,15 @@ export class DshRuntime implements AgentRuntime {
           : undefined,
       )
     }
+  }
+  async deleteSession(sessionId: string) {
+    if (!this.sessions.has(sessionId)) return
+    if (this.busy) throw new RuntimeError('runner.tenantBusy', 409)
+    this.admitting = true
+    try {
+      await this.stopProcess()
+      this.sessions.delete(sessionId)
+    } finally { this.admitting = false }
   }
   async cancel(sessionId: string) {
     this.session(sessionId)

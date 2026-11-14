@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readdir, readFile, mkdir, writeFile, lstat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
-import { createRunnerServer, type RunnerOptions } from './server.ts'
+import { createRunnerServer, prepareRunnerRoot, type RunnerOptions } from './server.ts'
 
 async function fixture(t: TestContext, scenario = 'text', overrides: Partial<RunnerOptions> = {}) {
   const requests: Record<string, unknown>[] = []
@@ -59,6 +59,7 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
   const address = provider.address()
   assert.ok(address && typeof address !== 'string')
   const rootDir = await mkdtemp(join(tmpdir(), 'ai-runner-contract-'))
+  await prepareRunnerRoot(rootDir)
   const runner = createRunnerServer({
     serviceToken: 'contract-service-token',
     proxyUrl: `http://127.0.0.1:${address.port}`,
@@ -906,4 +907,77 @@ test('Skill snapshots reject paths, executable attachments, duplicate codes and 
     assert.equal(result.status, 400)
     assert.equal((await result.json()).code, 'runner.invalidRequest')
   }
+})
+
+test('authoritative replacement removes failed current input and preserves other sessions', { timeout: 60000 }, async (t) => {
+  const { call } = await fixture(t, 'failure')
+  const previous = [{ role: 'user', content: 'old question' }, { role: 'assistant', content: 'old answer' }]
+  assert.equal((await call('/sessions', 'POST', { sessionId: 'other', model: 'test-model', transcript: previous })).status, 201)
+  assert.equal((await call('/sessions', 'POST', { sessionId: 'recover', model: 'test-model', transcript: previous })).status, 201)
+  const failed = await call('/sessions/recover/messages', 'POST', { text: 'current once', contextToken: 'capability' })
+  assert.match(await failed.text(), /event: error/)
+  assert.equal((await call('/sessions', 'POST', { sessionId: 'recover', model: 'test-model', transcript: previous, replace: true })).status, 201)
+  const completed = await call('/sessions/recover/messages', 'POST', { text: 'current once', contextToken: 'capability' })
+  assert.match(await completed.text(), /event: completed/)
+  const recovered = await (await call('/sessions/recover/export')).json()
+  assert.equal(recovered.transcript.filter((m: { content: string }) => m.content === 'current once').length, 1)
+  assert.deepEqual((await (await call('/sessions/other/export')).json()).transcript, previous)
+})
+
+
+test('owned home keeps no chat JSONL after export and startup only reclaims owned process directories', { timeout: 30000 }, async (t) => {
+  const { call, rootDir } = await fixture(t)
+  await mkdir(join(rootDir, 'tenant-ABC123'))
+  await writeFile(join(rootDir, 'tenant-ABC123', 'stale.jsonl'), 'stale private data')
+  await writeFile(join(rootDir, 'unrelated.keep'), 'keep')
+  await prepareRunnerRoot(rootDir)
+  assert.equal((await readdir(rootDir)).includes('tenant-ABC123'), false)
+  assert.equal(await readFile(join(rootDir, 'unrelated.keep'), 'utf8'), 'keep')
+  await call('/sessions', 'POST', { sessionId: 'no-files', model: 'test-model' })
+  const result=await call('/sessions/no-files/messages', 'POST', { text: 'private-user-content-no-file', contextToken: 'capability' })
+  assert.match(await result.text(), /event: completed/)
+  const files=await readdir(rootDir, { recursive: true })
+  assert.equal(files.some(file => /\.jsonl(?:\.|$)/.test(file)), false)
+  for (const file of files) {
+    const path=join(rootDir,file)
+    const stat=await lstat(path)
+    if (stat.isFile()) assert.equal((await readFile(path,'utf8')).includes('private-user-content-no-file'), false)
+  }
+  assert.equal((await call('/sessions/no-files', 'DELETE')).status,204)
+  assert.equal((await call('/sessions/no-files/export')).status,404)
+  const unowned=await mkdtemp(join(tmpdir(),'ai-unowned-'))
+  try {
+    await writeFile(join(unowned,'keep.txt'),'keep')
+    await assert.rejects(prepareRunnerRoot(unowned),/not owned/)
+    assert.equal(await readFile(join(unowned,'keep.txt'),'utf8'),'keep')
+  } finally { await rm(unowned,{recursive:true,force:true}) }
+})
+
+test('authoritative admission reuses an identical completed cache without restarting its process', { timeout: 30000 }, async (t) => {
+  const { call, base, headers } = await fixture(t)
+  await call('/sessions','POST',{sessionId:'same',model:'test-model'})
+  await (await call('/sessions/same/messages','POST',{text:'first question',contextToken:'capability'})).text()
+  const transcript=(await (await call('/sessions/same/export')).json()).transcript
+  const before=(await (await fetch(`${base}/v1/runtime`,{headers})).json()).workers[0].processId
+  assert.equal((await call('/sessions','POST',{sessionId:'same',model:'test-model',transcript,replace:true})).status,201)
+  const after=(await (await fetch(`${base}/v1/runtime`,{headers})).json()).workers[0].processId
+  assert.equal(after,before)
+})
+
+test('next explicit turn rebuilds from DB partial assistant history after cancellation', { timeout: 30000 }, async (t) => {
+  const { call, requests }=await fixture(t,'hold')
+  await call('/sessions','POST',{sessionId:'partial',model:'test-model'})
+  const response=await call('/sessions/partial/messages','POST',{text:'incomplete question',contextToken:'capability'})
+  const reader=response.body!.getReader()
+  let frames=''
+  while (!frames.includes('"text":"partial"')) frames+=new TextDecoder().decode((await reader.read()).value)
+  await call('/sessions/partial/cancel','POST')
+  await reader.cancel()
+  const authoritative=[{role:'user',content:'incomplete question'},{role:'assistant',content:'partial'}]
+  assert.equal((await call('/sessions','POST',{sessionId:'partial',model:'test-model',transcript:authoritative,replace:true})).status,201)
+  assert.match(await (await call('/sessions/partial/messages','POST',{text:'follow up',contextToken:'new-capability'})).text(),/event: completed/)
+  assert.ok(JSON.stringify(requests[1]).includes('partial'))
+  const exported=(await (await call('/sessions/partial/export')).json()).transcript
+  assert.deepEqual(exported.slice(0,2),authoritative)
+  assert.equal(exported.filter((item:{content:string})=>item.content==='follow up').length,1)
 })

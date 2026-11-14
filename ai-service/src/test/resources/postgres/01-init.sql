@@ -7,6 +7,7 @@ SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database()) \gexe
 -- ltree 由管理员安装到共享扩展 schema，业务账号只获得 USAGE。
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS ltree SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA extensions;
 
 \set service ai
 \set migrator_password ai_migrator

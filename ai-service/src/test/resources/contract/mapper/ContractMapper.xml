@@ -5,4 +5,16 @@
         SELECT id, created_at, updated_at, created_by, updated_by, deleted
         FROM contract_record WHERE id = #{id} AND NOT deleted
     </select>
+    <update id="ageConversation">UPDATE ai_conversation SET updated_at=CURRENT_TIMESTAMP - INTERVAL '100' DAY WHERE id=#{id}</update>
+    <select id="remainingConversationContent" resultType="long">
+        SELECT COUNT(*) FROM ai_conversation_message WHERE conversation_id=#{id} AND (content &lt;&gt; '' OR tool_calls &lt;&gt; '[]' OR NOT deleted)
+    </select>
+    <select id="remainingTenantContent" resultType="long">SELECT SUM(remaining) FROM (SELECT COUNT(*) AS remaining FROM ai_conversation WHERE (NOT deleted OR title &lt;&gt; '' OR instructions &lt;&gt; '' OR skill_snapshot &lt;&gt; '[]' OR mcp_snapshot &lt;&gt; '[]') UNION ALL SELECT COUNT(*) AS remaining FROM ai_conversation_message WHERE (NOT deleted OR content &lt;&gt; '' OR tool_calls &lt;&gt; '[]') UNION ALL SELECT COUNT(*) AS remaining FROM ai_conversation_turn WHERE (NOT deleted OR recovery_snapshot &lt;&gt; '[]') UNION ALL SELECT COUNT(*) AS remaining FROM ai_prompt_template WHERE (NOT deleted OR content &lt;&gt; '' OR name &lt;&gt; '') UNION ALL SELECT COUNT(*) AS remaining FROM ai_prompt_version WHERE (NOT deleted OR content &lt;&gt; '') UNION ALL SELECT COUNT(*) AS remaining FROM ai_tenant_skill WHERE (NOT deleted) UNION ALL SELECT COUNT(*) AS remaining FROM ai_tenant_skill_version WHERE (NOT deleted) UNION ALL SELECT COUNT(*) AS remaining FROM ai_tenant_mcp WHERE (NOT deleted OR tool_names &lt;&gt; '') UNION ALL SELECT COUNT(*) AS remaining FROM ai_tenant_mcp_version WHERE (NOT deleted OR tool_names &lt;&gt; '' OR secret_ref IS NOT NULL) UNION ALL SELECT COUNT(*) AS remaining FROM ai_mcp_tool_grant WHERE (NOT deleted OR tool_name &lt;&gt; '') UNION ALL SELECT COUNT(*) AS remaining FROM ai_tenant_model_selection WHERE (NOT deleted OR model_ids &lt;&gt; '[]') UNION ALL SELECT COUNT(*) AS remaining FROM ai_usage_plan WHERE (NOT deleted) UNION ALL SELECT COUNT(*) AS remaining FROM ai_usage_month WHERE (NOT deleted) UNION ALL SELECT COUNT(*) AS remaining FROM ai_usage_ledger WHERE (NOT deleted OR tool_call_ids &lt;&gt; '[]') UNION ALL SELECT COUNT(*) AS remaining FROM ai_usage_daily WHERE (NOT deleted)) counts</select>
+    <select id="retainedPlatformCatalogs" resultType="long">
+        SELECT (SELECT COUNT(*) FROM ai_model_catalog WHERE id='019a2525-0011-7000-8000-000000000010' AND NOT deleted)
+        + (SELECT COUNT(*) FROM ai_skill_catalog WHERE id='019a2525-0011-7000-8000-000000000011' AND NOT deleted)
+        + (SELECT COUNT(*) FROM ai_mcp_catalog WHERE id='019a2525-0011-7000-8000-000000000013' AND NOT deleted)
+    </select>
+    <select id="recoverySnapshot" resultType="string">SELECT recovery_snapshot FROM ai_conversation_turn WHERE id=#{id}</select>
+    <select id="modelCalls" resultType="long">SELECT model_calls FROM ai_usage_ledger WHERE id=#{id}</select>
 </mapper>

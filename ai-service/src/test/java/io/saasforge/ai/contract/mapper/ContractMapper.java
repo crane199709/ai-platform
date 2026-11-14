@@ -12,4 +12,16 @@ public interface ContractMapper extends BaseMapper<ContractRecord> {
     /** 故意略过 SQL 租户条件，验证 PostgreSQL RLS 仍拒绝读取其他租户。 */
     @InterceptorIgnore(tenantLine = "true")
     ContractRecord readWithRlsOnly(UUID id);
+
+    void ageConversation(UUID id);
+
+    long remainingConversationContent(UUID id);
+
+    long remainingTenantContent();
+
+    long retainedPlatformCatalogs();
+
+    String recoverySnapshot(UUID id);
+
+    long modelCalls(UUID id);
 }

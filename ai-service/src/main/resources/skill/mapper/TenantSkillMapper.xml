@@ -4,4 +4,8 @@
     <select id="lock" resultType="io.saasforge.ai.skill.entity.TenantSkill">
         SELECT * FROM ai_tenant_skill WHERE catalog_id = #{catalogId} AND NOT deleted FOR UPDATE
     </select>
+    <update id="eraseTenantData">
+        UPDATE ai_tenant_skill SET draft_enabled=false,deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+    </update>
 </mapper>

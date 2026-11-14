@@ -25,6 +25,12 @@ public class SkillService {
     private final TenantSkillVersionMapper versions;
     private final MembershipGrantStore grants;
 
+    /** SDK 租户清理事务内调用，包含历史逻辑删除行。 */
+    public void eraseTenantData() {
+        settings.eraseTenantData();
+        versions.eraseTenantData();
+    }
+
     public SkillService(
             SkillCatalogService catalog,
             TenantSkillMapper settings,

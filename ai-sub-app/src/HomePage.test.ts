@@ -5,6 +5,7 @@ import HomePage from './HomePage.vue'
 
 const boundary = vi.hoisted(() => ({
   api: vi.fn(),
+  page: vi.fn(),
   request: vi.fn(),
   session: { tenantId: 'tenant-a', membershipId: 'member-a' } as {
     tenantId: string
@@ -17,6 +18,7 @@ vi.mock('@crane199709/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@crane199709/sdk')>()),
   useTenantClient: () => ({
     api: boundary.api,
+    page: boundary.page,
     request: boundary.request,
     session: () => boundary.session,
     onSessionChange: (listener: (session: unknown) => void) => {
@@ -44,6 +46,15 @@ beforeEach(() => {
     if (path === '/ai/conversations') return [structuredClone(conversation)]
     if (path === '/ai/conversations/c1') return structuredClone(conversation)
     throw Error(path)
+  })
+  boundary.page.mockReset().mockImplementation(async (path: string) => {
+    const items = await boundary.api(
+      path.startsWith('/ai/conversations?query=') ? path : '/ai/conversations',
+    )
+    return {
+      items,
+      page: { number: 1, size: 20, totalElements: items.length, totalPages: items.length ? 1 : 0 },
+    }
   })
   boundary.request.mockReset()
 })
@@ -256,7 +267,7 @@ test('SSE错误显示部分回答并允许用户显式再次发送', async () =>
     .find((button) => button.text() === '发送')!
     .trigger('click')
   await flushPromises()
-  expect(wrapper.text()).toContain('回答未完成，已保留部分内容。可以重试发送。')
+  expect(wrapper.text()).toContain('回答未完成，已保留部分内容。点击重试将重新发送为新回合。')
   expect(wrapper.text()).toContain('保留的部分回答')
   expect(wrapper.findAll('button').find((button) => button.text() === '重试')).toBeDefined()
   const first = JSON.parse(boundary.request.mock.calls[0][1].body)
@@ -382,5 +393,123 @@ test.each([
     .trigger('click')
   await flushPromises()
   expect(wrapper.text()).toContain(tip)
+  wrapper.unmount()
+})
+
+test('搜索按输入查询并显示空结果，下载复用 Shell 客户端', async () => {
+  const wrapper = await openChat()
+  boundary.api.mockImplementation(async (path: string) =>
+    path.startsWith('/ai/conversations?') ? [] : structuredClone(conversation),
+  )
+  const search = wrapper.get('input[aria-label="搜索历史会话"]')
+  expect(search.attributes('disabled')).toBeUndefined()
+  await search.setValue('100%_中文')
+  await search.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(boundary.page).toHaveBeenCalledWith(
+    '/ai/conversations?query=100%25_%E4%B8%AD%E6%96%87&page=1&size=20',
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  )
+  expect(wrapper.text()).toContain('没有匹配的会话')
+  boundary.request.mockResolvedValue(
+    new Response('# 中文', { headers: { 'content-type': 'text/markdown' } }),
+  )
+  const createUrl = vi.fn(() => 'blob:download')
+  Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true })
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  await wrapper.get('[aria-label="会话操作"]').trigger('click')
+  await flushPromises()
+  const menu = document.body.querySelectorAll('.el-dropdown-menu__item')
+  const markdown = Array.from(menu).find((item) => item.textContent?.includes('导出 Markdown'))
+  expect(markdown).toBeTruthy()
+  markdown?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await flushPromises()
+  expect(boundary.request).toHaveBeenCalledWith(
+    '/api/ai/conversations/c1/export?format=markdown',
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  )
+  expect(createUrl).toHaveBeenCalledOnce()
+  wrapper.unmount()
+})
+
+test('加载下一页并忽略旧搜索的迟到结果', async () => {
+  const wrapper = await openChat()
+  let oldResult!: (value: unknown) => void
+  boundary.page.mockImplementation(async (path: string) => {
+    if (path.includes('query=old'))
+      return new Promise((resolve) => {
+        oldResult = resolve
+      })
+    const second = path.includes('page=2')
+    return {
+      items: [
+        { ...conversation, id: second ? 'older' : 'new', title: second ? '较早历史' : '新查询' },
+      ],
+      page: { number: second ? 2 : 1, size: 20, totalElements: 21, totalPages: 2 },
+    }
+  })
+  const search = wrapper.get('input[aria-label="搜索历史会话"]')
+  await search.setValue('old')
+  await search.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  await search.setValue('new')
+  await search.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(wrapper.text()).toContain('新查询')
+  oldResult({
+    items: [{ ...conversation, title: '旧请求不应覆盖' }],
+    page: { number: 1, size: 20, totalElements: 1, totalPages: 1 },
+  })
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('旧请求不应覆盖')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '加载更多会话')!
+    .trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('新查询')
+  expect(wrapper.text()).toContain('较早历史')
+  expect(wrapper.text()).not.toContain('加载更多会话')
+  wrapper.unmount()
+})
+
+test('崩溃恢复提示重新生成并清空本轮旧partial和审批，再显示新回答', async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>
+  boundary.request.mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          stream = controller
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    ),
+  )
+  const wrapper = await openChat()
+  await wrapper.get('textarea').setValue('恢复当前轮')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === '发送')!
+    .trigger('click')
+  await flushPromises()
+  const encoder = new TextEncoder()
+  stream.enqueue(
+    encoder.encode(
+      'event:token\ndata:{"text":"旧的部分回答"}\n\nevent:tool.approval\ndata:{"approvalId":"old","displayName":"旧审批","description":"待确认","expiresAt":"2099-01-01T00:00:00Z","status":"PENDING"}\n\n',
+    ),
+  )
+  await flushPromises()
+  expect(wrapper.text()).toContain('旧的部分回答')
+  stream.enqueue(
+    encoder.encode(
+      'event:retrying\ndata:{"attempt":2,"reason":"runner.recovered"}\n\nevent:token\ndata:{"text":"恢复后的回答"}\n\n',
+    ),
+  )
+  await flushPromises()
+  expect(wrapper.text()).not.toContain('旧的部分回答')
+  expect(wrapper.text()).not.toContain('旧审批')
+  expect(wrapper.text()).toContain('正在重新生成本次回答')
+  expect(wrapper.text()).toContain('恢复后的回答')
   wrapper.unmount()
 })

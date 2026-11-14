@@ -19,6 +19,7 @@ public class RunnerModelProxyService {
     private final ModelProxyProperties properties;
     private final ProviderTransport transport;
     private final UsageService usage;
+    private final RunnerCapabilityService capabilities;
     private final JsonMapper json = JsonMapper.builder().build();
 
     public RunnerModelProxyService(
@@ -26,7 +27,9 @@ public class RunnerModelProxyService {
             Environment environment,
             ProviderTransport transport,
             ModelProxyProperties properties,
-            UsageService usage) {
+            UsageService usage,
+            RunnerCapabilityService capabilities) {
+        this.capabilities = capabilities;
         this.properties = properties;
         this.usage = usage;
         this.models = models;
@@ -69,15 +72,34 @@ public class RunnerModelProxyService {
         body.put("max_tokens", output);
         String base = config.baseUrl().toString().replaceAll("/$", "");
         URI endpoint = URI.create(base + "/chat/completions");
-        usage.modelAttempt(capability.turnId());
-        var response = transport.open(endpoint, secret, json.writeValueAsString(body));
-        if (response.status() != 200 || !response.contentType().startsWith("text/event-stream")) {
+        // 仅在尚未打开提供方响应流的明确瞬时 HTTP 状态下重试；不重放已输出内容或工具。
+        for (int attempt = 0; attempt < 3; attempt++) {
+            capabilities.requireActive(capability, "model:chat");
+            models.resolveForUse(capability.modelId());
+            usage.modelAttempt(capability.turnId());
+            var response = transport.open(endpoint, secret, json.writeValueAsString(body));
+            if (response.status() == 200 && response.contentType().startsWith("text/event-stream")) {
+                return response;
+            }
             try {
                 response.body().close();
             } catch (IOException ignored) {
             }
-            throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+            boolean transientStatus = response.status() == 429
+                    || response.status() == 502
+                    || response.status() == 503
+                    || response.status() == 504;
+            if (!transientStatus || attempt == 2) {
+                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+            }
+            usage.preserveUnsettled(capability.turnId());
+            try {
+                Thread.sleep(100L * (attempt + 1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+            }
         }
-        return response;
+        throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
     }
 }

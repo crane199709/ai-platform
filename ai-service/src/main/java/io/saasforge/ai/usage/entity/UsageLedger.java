@@ -107,6 +107,16 @@ public class UsageLedger extends AuditableEntity {
         cachedInputTokens = value;
     }
 
+    private long priorEstimatedTokens;
+
+    public long getPriorEstimatedTokens() {
+        return priorEstimatedTokens;
+    }
+
+    public void setPriorEstimatedTokens(long value) {
+        priorEstimatedTokens = value;
+    }
+
     private long estimatedTokens;
 
     public long getEstimatedTokens() {

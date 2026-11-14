@@ -6,6 +6,7 @@ import io.saasforge.ai.conversation.service.ConversationService;
 import io.saasforge.ai.conversation.service.ConversationStreamingService;
 import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.security.RequiresPermission;
+import io.saasforge.sdk.web.PageQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,8 +44,9 @@ public class ConversationController {
 
     @GetMapping
     @RequiresPermission("ai:conversation:use")
-    public ApiResponse<List<ConversationResponse>> list() {
-        return ApiResponse.ok(conversations.list());
+    public ApiResponse<List<ConversationResponse>> list(
+            @RequestParam(required = false) @Size(max = 200) String query, PageQuery page) {
+        return conversations.list(query, page);
     }
 
     @GetMapping("/{id}")

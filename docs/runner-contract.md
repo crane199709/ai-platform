@@ -120,10 +120,18 @@ JSON 错误体是 `{ "code": "runner.*", "retryable": false/true }`。SSE 开始
 
 部署升级须先发布支持消息 `tools` 的 Runner，再发布始终发送该字段的 Java AI 服务；旧 Runner 的严格未知字段校验会拒绝新调用。已有 Runner 调用者可继续省略该字段。
 
+## 单会话权威替换与本地清理
+
+工单11增加建会话字段 `replace?: boolean`（默认false）。true在当前租户无活跃回合且已锁住准入时，用给定DB transcript与快照原子替换指定session；其余逻辑session保持历史，必要的进程重建只令它们稍后重放。替换失败不允许将当前用户输入追加两遍。普通重复create仍409 `runner.sessionExists`，调用方不能把其他409错误当成功。Java在SSE之前调用准入，并保留池满的HTTP429/Retry-After。
+
+`DELETE /v1/tenants/{tenantId}/sessions/{sessionId}` 清理单个非活跃会话运行缓存，保留其他会话逻辑历史；`DELETE /v1/tenants/{tenantId}` 继续用于租户删除。两者不存在时均幂等。工具事件增加 `attemptId`，作用域为同一模型请求，使用者以attemptId+callId去重；不改变callId与tool result的关联。
+
+Runner root必须为单实例专属目录。启动先验证 `.ai-platform-runner` 所有权标记：初次空目录认领，非空无标记拒绝，仅清理已认领root内格式为tenant-xxxxxx的残留进程目录。固定profile已禁用JSONL持久化，不以成功后目录仍存在为理由终止可复用进程；真实文件契约验证回合后无聊天JSONL/用户正文。
+
+升级先发布支持replace、单session删除与工具attemptId的Runner，再发布使用它们的Java服务。完整重试、留存与导出语义见 [hardening.md](hardening.md)。
+
 ## 工单12部署与指标
 
 Runner运行端口默认8181，`/health`存活、`/ready`检查固定proxy/root配置，运行接口仍全部要求服务令牌。新增受保护`GET /metrics`仅返回实例级process/pool聚合，不含tenant/PID/内容。可选`AI_RUNNER_MANAGEMENT_PORT=9091`提供独立只读`GET /metrics`，其他路径和方法404；该端口只准内网采集器，监控无需Runner服务令牌，也不能调用运行/导出接口。K8s运行端口只准AI服务，指标端口只准指定监控namespace/pod。
 
 指标`ai_runner_processes`只计存活DSH进程；`ai_runner_pool_tenants`是保留的租户槽数，可能包含尚无进程的会话；`ai_runner_busy_tenants`包含准入/执行/停止状态；`ai_runner_pool_capacity`为当前实例上限。四项均无租户标签。部署资源、单实例限制、镜像和回滚见[部署指南](deployment.md)。
-
-工单11会话恢复协议的发布顺序：先部署支持建会话`replace?:boolean`、单会话DELETE、工具事件`attemptId`的Runner，再部署依赖它的Java。`replace:true`忙时拒绝，只原子替换目标session的DB权威快照，其他会话保留；普通create重复仍精确409 `runner.sessionExists`。Runner专属root使用`.ai-platform-runner`所有权标记，只清理已认领root的租户进程残留，已有非空无标记目录拒绝启动；K8s专属emptyDir无需接管旧用户目录。

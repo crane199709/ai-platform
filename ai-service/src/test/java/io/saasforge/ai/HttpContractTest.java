@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -27,15 +28,33 @@ class HttpContractTest {
     @LocalServerPort
     int port;
 
+    @LocalManagementPort
+    int managementPort;
+
     @Test
-    void healthIsAvailableWithoutAuthentication() {
-        assertThat(client().get()
+    void managementHealthIsAvailableWithoutAuthentication() {
+        assertThat(RestClient.create("http://127.0.0.1:" + managementPort)
+                        .get()
                         .uri("/actuator/health")
                         .retrieve()
                         .body(JsonNode.class)
                         .path("status")
                         .asText())
                 .isEqualTo("UP");
+    }
+
+    @Test
+    void metricsAreAvailableOnlyOnManagementPort() {
+        assertThat(RestClient.create("http://127.0.0.1:" + managementPort)
+                        .get()
+                        .uri("/actuator/prometheus")
+                        .retrieve()
+                        .body(String.class))
+                .contains("jvm_memory_used_bytes");
+        client().get().uri("/actuator/prometheus").exchange((request, response) -> {
+            assertThat(response.getStatusCode().value()).isEqualTo(404);
+            return null;
+        });
     }
 
     @Test

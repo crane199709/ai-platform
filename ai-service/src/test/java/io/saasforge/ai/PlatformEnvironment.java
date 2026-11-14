@@ -189,7 +189,8 @@ final class PlatformEnvironment implements AutoCloseable {
         properties.put("spring.cloud.gateway.server.webflux.trusted-proxies", "127[.]0[.]0[.]1|0:0:0:0:0:0:0:1|::1");
         // 沿用实际交付的 /ai 路由，只把服务发现 URI 换成本次测试的随机端口。
         properties.put(prefix + "[0].uri", "http://127.0.0.1:" + aiPort);
-        int index = 1;
+        properties.put(prefix + "[1].uri", "http://127.0.0.1:" + aiPort);
+        int index = 2;
         for (var route : Map.of("iam", iam(), "platform", platform()).entrySet()) {
             properties.put(prefix + "[" + index + "].id", route.getKey());
             properties.put(prefix + "[" + index + "].uri", route.getValue());

@@ -46,6 +46,10 @@ final class TestTokens {
 
     static void register(DynamicPropertyRegistry registry) {
         registry.add("forge.security.issuer", () -> ISSUER);
+        registry.add("forge.security.platform.issuer", () -> ISSUER + "/platform");
+        registry.add(
+                "forge.security.platform.jwk-set-uri",
+                () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/jwks");
         registry.add(
                 "forge.security.jwk-set-uri",
                 () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/jwks");

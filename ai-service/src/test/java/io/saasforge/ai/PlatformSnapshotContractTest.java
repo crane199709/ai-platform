@@ -15,7 +15,7 @@ class PlatformSnapshotContractTest {
     @Test
     void aiManifestUsesItsOwnPermissionsAndSubApp() throws Exception {
         var manifest = ResourceManifestCollector.collect(
-                "ai-service", "3", "io.saasforge.ai", getClass().getClassLoader());
+                "ai-service", "4", "io.saasforge.ai", getClass().getClassLoader());
         Files.writeString(
                 Path.of("target/resource-manifest.json"),
                 JsonMapper.builder().build().writeValueAsString(manifest));

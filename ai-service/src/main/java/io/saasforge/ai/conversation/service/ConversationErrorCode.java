@@ -3,6 +3,7 @@ package io.saasforge.ai.conversation.service;
 import io.saasforge.sdk.core.api.ErrorCode;
 
 public enum ConversationErrorCode implements ErrorCode {
+    FORMAT("conversation.invalidExportFormat", 400),
     NOT_FOUND("conversation.notFound", 404),
     BUSY("conversation.busy", 409),
     IDEMPOTENCY_CONFLICT("conversation.idempotencyConflict", 409),

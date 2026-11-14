@@ -29,9 +29,17 @@ public class HttpAgentRuntime implements AgentRuntime {
         this.properties = properties;
     }
 
+    public void admit(Session session) {
+        create(session, true);
+    }
+
+    public void restore(Session session) {
+        create(session, true);
+    }
+
     public void run(Run request, Consumer<Event> emit) {
         var session = request.session();
-        create(session);
+        create(session, false);
         var body = Map.of(
                 "text",
                 request.text(),
@@ -42,16 +50,21 @@ public class HttpAgentRuntime implements AgentRuntime {
                 "tools",
                 session.tools());
         for (int attempt = 0; attempt < 2; attempt++) {
+            boolean terminalEvent = false;
+            emit.accept(new Event(
+                    "attempt",
+                    json.valueToTree(Map.of("attemptId", UUID.randomUUID().toString(), "retry", attempt > 0))));
             try {
                 var response =
                         client.send(post(path(session) + "/messages", body), HttpResponse.BodyHandlers.ofInputStream());
                 if (response.statusCode() == 404 && attempt == 0) {
                     response.body().close();
-                    create(session);
+                    create(session, true);
                     continue;
                 }
                 if (response.statusCode() != 200) {
                     response.body().close();
+                    checkCapacity(response);
                     throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
                 }
                 try (var reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
@@ -61,7 +74,11 @@ public class HttpAgentRuntime implements AgentRuntime {
                     while ((line = reader.readLine()) != null) {
                         if (line.isEmpty()) {
                             if (!data.isEmpty()) {
-                                emit.accept(new Event(type, json.readTree(data.toString())));
+                                var event = new Event(type, json.readTree(data.toString()));
+                                if (type.equals("error") || type.equals("completed") || type.equals("cancelled")) {
+                                    terminalEvent = true;
+                                }
+                                emit.accept(event);
                             }
                             type = "message";
                             data.setLength(0);
@@ -78,19 +95,71 @@ public class HttpAgentRuntime implements AgentRuntime {
                         }
                     }
                 }
+                if (!terminalEvent) {
+                    throw new ForgeException(RunnerErrorCode.DISCONNECTED);
+                }
                 return;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
             } catch (IOException e) {
-                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+                throw new ForgeException(RunnerErrorCode.DISCONNECTED);
             }
         }
     }
 
-    private void create(Session session) {
+    private void checkCapacity(HttpResponse<?> response) {
+        if (response.statusCode() == 429) {
+            int seconds = 5;
+            try {
+                seconds = Math.max(
+                        1,
+                        Math.min(
+                                300,
+                                Integer.parseInt(response.headers()
+                                        .firstValue("Retry-After")
+                                        .orElse("5"))));
+            } catch (NumberFormatException ignored) {
+            }
+            throw new ForgeException(RunnerErrorCode.POOL_FULL, seconds);
+        }
+    }
+
+    public void deleteSession(UUID tenantId, UUID sessionId) {
+        delete("/v1/tenants/" + tenantId + "/sessions/" + sessionId);
+    }
+
+    public void deleteTenant(UUID tenantId) {
+        delete("/v1/tenants/" + tenantId);
+    }
+
+    private void delete(String path) {
+        try {
+            var response = client.send(
+                    HttpRequest.newBuilder(
+                                    URI.create(properties.baseUri().toString().replaceAll("/$", "") + path))
+                            .timeout(properties.timeout())
+                            .header("Authorization", "Bearer " + properties.serviceToken())
+                            .DELETE()
+                            .build(),
+                    HttpResponse.BodyHandlers.discarding());
+            if (response.statusCode() != 204 && response.statusCode() != 404) {
+                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+        } catch (IOException e) {
+            throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+        }
+    }
+
+    private void create(Session session, boolean replace) {
         var body = new LinkedHashMap<String, Object>();
         body.put("sessionId", session.sessionId());
+        if (replace) {
+            body.put("replace", true);
+        }
         body.put("model", session.model());
         body.put("transcript", session.transcript());
         body.put("instructions", session.instructions());
@@ -101,8 +170,15 @@ public class HttpAgentRuntime implements AgentRuntime {
         try {
             var response = client.send(
                     post("/v1/tenants/" + session.tenantId() + "/sessions", body),
-                    HttpResponse.BodyHandlers.discarding());
-            if (response.statusCode() != 201 && response.statusCode() != 409) {
+                    HttpResponse.BodyHandlers.ofString());
+            checkCapacity(response);
+            if (response.statusCode() != 201
+                    && !(!replace
+                            && response.statusCode() == 409
+                            && json.readTree(response.body())
+                                    .path("code")
+                                    .asText()
+                                    .equals("runner.sessionExists"))) {
                 throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
             }
         } catch (InterruptedException e) {

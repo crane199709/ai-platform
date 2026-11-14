@@ -98,6 +98,16 @@ public class ConversationTurn extends AuditableEntity {
         this.cachedInputTokens = value;
     }
 
+    private String recoverySnapshot;
+
+    public String getRecoverySnapshot() {
+        return recoverySnapshot;
+    }
+
+    public void setRecoverySnapshot(String value) {
+        recoverySnapshot = value;
+    }
+
     private Boolean usageReported;
 
     public Boolean getUsageReported() {

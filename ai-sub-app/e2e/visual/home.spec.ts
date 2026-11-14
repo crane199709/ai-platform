@@ -70,7 +70,14 @@ const now = '2026-11-14T08:00:00Z'
 const envelope = (data: unknown) => ({ code: 'ok', httpStatus: 200, data, traceId: 'visual' })
 async function setup(
   page: Page,
-  options: { noPermission?: boolean; login?: boolean; failed?: boolean; history?: boolean } = {},
+  options: {
+    noPermission?: boolean
+    login?: boolean
+    failed?: boolean
+    history?: boolean
+    streamUrl?: string
+    onDecision?: (approved: boolean) => void
+  } = {},
 ) {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
@@ -269,7 +276,44 @@ async function setup(
           },
         ],
       })
-    if (path === '/conversations' && method === 'GET') return ok(conversations)
+    if (path === '/conversations' && method === 'GET') {
+      const url = new URL(request.url())
+      const query = url.searchParams.get('query') || ''
+      const items = conversations.filter((item) =>
+        `${item.title} ${item.messages.map((message: any) => message.content).join(' ')}`.includes(
+          query,
+        ),
+      )
+      return route.fulfill({
+        json: {
+          ...envelope(items),
+          meta: {
+            page: {
+              number: 1,
+              size: 20,
+              totalElements: items.length,
+              totalPages: items.length ? 1 : 0,
+            },
+          },
+        },
+      })
+    }
+    if (path.endsWith('/export')) {
+      const format = new URL(request.url()).searchParams.get('format')
+      return route.fulfill({
+        contentType: format === 'json' ? 'application/json' : 'text/markdown',
+        headers: {
+          'content-disposition': `attachment; filename="conversation.${format === 'json' ? 'json' : 'md'}"`,
+        },
+        body:
+          format === 'json'
+            ? JSON.stringify({ title: conversations[0].title, messages: conversations[0].messages })
+            : '# ' +
+              conversations[0].title +
+              '\n\n' +
+              conversations[0].messages.map((message: any) => message.content).join('\n'),
+      })
+    }
     if (path === '/conversations' && method === 'POST') {
       const item = {
         ...body,
@@ -445,6 +489,120 @@ for (const [label, width, height] of [
       await page.getByTestId('conversation-conversation-new').click()
       await expect(page.getByText('已完成季度报告初稿，请核对关键指标。')).toBeVisible()
       expect(state.errors).toEqual([])
+    })
+    test('搜索标题正文、空结果和两种下载', async ({ page }) => {
+      const state = await setup(page, { history: true })
+      const search = page.getByRole('textbox', { name: '搜索历史会话' })
+      await search.fill('不存在的历史')
+      await search.press('Enter')
+      await expect(page.getByText('没有匹配的会话', { exact: true })).toBeVisible()
+      await expect(page).toHaveScreenshot(`search-empty-${label}.png`)
+      await search.fill('第三季度')
+      await search.press('Enter')
+      await expect(page.getByTestId('conversation-conversation-1')).toBeVisible()
+      await page.getByTestId('conversation-conversation-1').click()
+      await expect(page.getByText('订单交付周期缩短', { exact: false })).toBeVisible()
+      await expect(page).toHaveScreenshot(`search-results-${label}.png`)
+      for (const [name, extension] of [
+        ['Markdown', 'md'],
+        ['JSON', 'json'],
+      ] as const) {
+        await page.getByRole('button', { name: '会话操作' }).click()
+        const download = page.waitForEvent('download')
+        await page.getByRole('menuitem', { name: `导出 ${name}`, exact: true }).click()
+        const file = await download
+        expect(file.suggestedFilename()).toMatch(new RegExp(`\\.${extension}$`))
+        expect(await file.failure()).toBeNull()
+      }
+      expect(state.errors).toEqual([])
+    })
+    test('断流保留部分回答并按原幂等键核对', async ({ page }) => {
+      const state = await setup(page, { history: true })
+      const keys: string[] = []
+      await page.route('**/api/ai/conversations/*/messages', (route) => {
+        keys.push(route.request().postDataJSON().idempotencyKey)
+        return route.fulfill({
+          contentType: 'text/event-stream',
+          body:
+            keys.length === 1
+              ? 'event:token\ndata:{"text":"断流前的部分回答"}\n\n'
+              : 'event:done\ndata:{"status":"COMPLETED","replayed":true}\n\n',
+        })
+      })
+      await page.getByTestId('conversation-conversation-1').click()
+      await page.getByRole('textbox', { name: '消息', exact: true }).fill('断流验收')
+      await page.getByRole('button', { name: '发送', exact: true }).click()
+      await expect(
+        page.getByText('连接中断，已保留部分回答。重试将核对同一条消息，不会重复提交。', {
+          exact: true,
+        }),
+      ).toBeVisible()
+      await expect(page.getByText('断流前的部分回答', { exact: true })).toBeInViewport()
+      const retryBounds = await page
+        .getByRole('button', { name: '重试', exact: true })
+        .boundingBox()
+      expect(retryBounds).not.toBeNull()
+      expect(retryBounds!.y + retryBounds!.height).toBeLessThanOrEqual(height)
+      await expect(page).toHaveScreenshot(`stream-interrupted-${label}.png`)
+      await page.getByRole('button', { name: '重试', exact: true }).click()
+      await expect.poll(() => keys.length).toBe(2)
+      expect(keys[0]).toBe(keys[1])
+      expect(state.errors).toEqual([])
+    })
+    test('崩溃后提示重新生成且本轮旧partial不重复显示', async ({ page }) => {
+      let response: ServerResponse | undefined
+      const server = createServer((request, result) => {
+        result.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:5180')
+        result.setHeader('Access-Control-Allow-Headers', 'authorization,content-type')
+        result.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS')
+        if (request.method === 'OPTIONS') {
+          result.writeHead(204).end()
+          return
+        }
+        response = result
+        result.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
+        result.write('event:token\ndata:{"text":"将被重新生成的旧内容"}\n\n')
+      })
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const address = server.address()
+      if (!address || typeof address === 'string') throw Error('Missing recovery fixture')
+      try {
+        const state = await setup(page, {
+          history: true,
+          streamUrl: `http://127.0.0.1:${address.port}/events`,
+        })
+        await page.getByTestId('conversation-conversation-1').click()
+        await page
+          .getByRole('textbox', { name: '消息', exact: true })
+          .fill('恢复并重新生成本轮回答')
+        await page.getByRole('button', { name: '发送', exact: true }).click()
+        await expect(page.getByText('将被重新生成的旧内容', { exact: true })).toBeVisible()
+        response!.write(
+          'event:retrying\ndata:{"attempt":2,"reason":"runner.recovered"}\n\nevent:token\ndata:{"text":"已恢复服务，重新整理的业务报告正在生成。"}\n\n',
+        )
+        await expect(page.getByText('将被重新生成的旧内容', { exact: true })).toHaveCount(0)
+        await expect(
+          page.getByText(
+            '运行服务已恢复，正在重新生成本次回答；只读工具可能再次查询，敏感工具需要重新批准。',
+            { exact: true },
+          ),
+        ).toBeVisible()
+        await expect(
+          page.getByText('已恢复服务，重新整理的业务报告正在生成。', { exact: true }),
+        ).toBeVisible()
+        const cancelBounds = await page
+          .getByRole('button', { name: '取消生成', exact: true })
+          .boundingBox()
+        expect(cancelBounds).not.toBeNull()
+        expect(cancelBounds!.y + cancelBounds!.height).toBeLessThanOrEqual(height)
+        await expect(page).toHaveScreenshot(`runner-recovery-${label}.png`)
+        response!.end('event:done\ndata:{"status":"COMPLETED"}\n\n')
+        await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
+        expect(state.errors).toEqual([])
+      } finally {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
     })
     test('Prompt草稿预览、发布、历史和回滚', async ({ page }) => {
       const state = await setup(page)

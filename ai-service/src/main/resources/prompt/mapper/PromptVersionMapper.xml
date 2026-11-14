@@ -17,4 +17,8 @@
         FROM ai_prompt_version
         WHERE template_id = #{templateId} AND NOT deleted
     </select>
+    <update id="eraseTenantData">
+        UPDATE ai_prompt_version SET content='',variable_names='',deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+    </update>
 </mapper>

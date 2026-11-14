@@ -1,3 +1,5 @@
+import { readdir, readFile, writeFile, mkdir, lstat, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { DshRuntime } from './dsh-runtime.ts'
@@ -10,6 +12,25 @@ import {
   type ReadOnlyTool,
   type SkillSnapshot,
 } from './runtime.ts'
+
+/** 只清理已由本产品认领的专属 root，绝不清扫任意配置目录。部署保证一个 root 仅属一个实例。 */
+export async function prepareRunnerRoot(root: string) {
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  const info = await lstat(root)
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Runner root must be a dedicated directory')
+  const marker = join(root, '.ai-platform-runner')
+  const entries = await readdir(root)
+  if (!entries.includes('.ai-platform-runner')) {
+    if (entries.length) throw new Error('Runner root is not owned by AI Platform')
+    await writeFile(marker, 'ai-platform-runner-v1\n', { flag: 'wx', mode: 0o600 })
+  } else if (await readFile(marker, 'utf8') !== 'ai-platform-runner-v1\n') throw new Error('Runner root owner mismatch')
+  for (const entry of entries) {
+    if (!/^tenant-[A-Za-z0-9]{6}$/.test(entry)) continue
+    const directory = join(root, entry)
+    const stat = await lstat(directory)
+    if (stat.isDirectory() && !stat.isSymbolicLink()) await rm(directory, { recursive: true, force: true })
+  }
+}
 
 export interface RunnerOptions {
   serviceToken: string
@@ -123,7 +144,8 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
       })
       if (request.method === 'POST' && request.url?.endsWith('/sessions')) {
         const body = await readJson(request)
-        keys(body, ['sessionId', 'model', 'transcript', 'tools', 'instructions', 'skills'])
+        keys(body, ['sessionId', 'model', 'transcript', 'tools', 'instructions', 'skills', 'replace'])
+        if (body.replace !== undefined && typeof body.replace !== 'boolean') throw new RuntimeError('runner.invalidRequest', 400)
         identifier(body.sessionId)
         model(body.model)
         if (
@@ -157,6 +179,7 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
           lastUsed.set(tenantId, Date.now())
         }
         const input: SessionInput = {
+          replace: body.replace,
           sessionId: body.sessionId,
           model: body.model,
           transcript,
@@ -179,6 +202,10 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
         tenants.delete(tenantId)
         response.writeHead(204).end()
       } else if (!runtime || !sessionId) throw new RuntimeError('runner.sessionNotFound', 404)
+      else if (request.method === 'DELETE' && !action) {
+        await runtime.deleteSession(sessionId)
+        response.writeHead(204).end()
+      }
       else if (request.method === 'GET' && action === 'export')
         json(200, runtime.exportSession(sessionId))
       else if (request.method === 'POST' && action === 'cancel')

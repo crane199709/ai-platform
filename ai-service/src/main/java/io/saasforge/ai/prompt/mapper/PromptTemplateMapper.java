@@ -14,4 +14,6 @@ public interface PromptTemplateMapper extends BaseMapper<PromptTemplate> {
     PromptTemplate lockById(@Param("id") UUID id);
     /** 列出当前租户的模板，可限已发布项；不受成员级 Data Policy 过滤。 */
     List<PromptTemplate> findAll(@Param("publishedOnly") boolean publishedOnly);
+    /** 租户删除专用，清空已逻辑删除行的内容；保留租户拦截/RLS，不按成员范围缩窄。 */
+    void eraseTenantData();
 }

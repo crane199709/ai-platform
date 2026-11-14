@@ -1,11 +1,13 @@
 package io.saasforge.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
 import io.saasforge.ai.runner.config.RunnerProperties;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.HttpAgentRuntime;
+import io.saasforge.sdk.core.api.ForgeException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +25,98 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 class HttpAgentRuntimeContractTest {
+    @Test
+    void reportsCrashAndPartialEventsWithoutReplayingAtTransportLayer() throws Exception {
+        for (String preceding : List.of("", "delta", "tool.call", "modelFailure")) {
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            var prompts = new AtomicInteger();
+            var replacements = new AtomicInteger();
+            server.createContext("/v1/tenants/", exchange -> {
+                if (exchange.getRequestURI().getPath().endsWith("/messages")) {
+                    int attempt = prompts.incrementAndGet();
+                    String frames;
+                    if (attempt == 1) {
+                        frames = preceding.equals("delta")
+                                ? "event: delta\ndata: {\"text\":\"partial\"}\n\n"
+                                : preceding.equals("tool.call")
+                                        ? "event: tool.call\ndata: {\"callId\":\"call_1\"}\n\n"
+                                        : "";
+                        frames += "event: error\ndata: {\"code\":\"runner."
+                                + (preceding.equals("modelFailure") ? "modelFailure" : "runtimeExited") + "\"}\n\n";
+                    } else {
+                        frames = "event: completed\ndata: {\"usageReported\":false}\n\n";
+                    }
+                    exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                    byte[] bytes = frames.getBytes(StandardCharsets.UTF_8);
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                } else {
+                    var body = JsonMapper.builder().build().readTree(exchange.getRequestBody());
+                    if (body.path("replace").asBoolean()) {
+                        replacements.incrementAndGet();
+                        assertThat(body.path("transcript")).hasSize(1);
+                        assertThat(body.path("transcript")
+                                        .get(0)
+                                        .path("content")
+                                        .asText())
+                                .isEqualTo("DB history");
+                    }
+                    exchange.sendResponseHeaders(201, -1);
+                }
+                exchange.close();
+            });
+            server.start();
+            try {
+                var runtime = new HttpAgentRuntime(new RunnerProperties(
+                        URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                        "service",
+                        Duration.ofSeconds(5)));
+                var events = new CopyOnWriteArrayList<AgentRuntime.Event>();
+                runtime.run(
+                        new AgentRuntime.Run(
+                                new AgentRuntime.Session(
+                                        UUID.randomUUID(),
+                                        UUID.randomUUID(),
+                                        "model",
+                                        List.of(new AgentRuntime.TranscriptMessage("user", "DB history", null)),
+                                        "",
+                                        List.of(),
+                                        List.of()),
+                                "current",
+                                "capability"),
+                        events::add);
+                assertThat(prompts.get()).isEqualTo(1);
+                assertThat(replacements.get()).isZero();
+                assertThat(events.get(events.size() - 1).type()).isEqualTo("error");
+            } finally {
+                server.stop(0);
+            }
+        }
+    }
+
+    @Test
+    void admissionRetainsRealPoolCapacityStatusBeforeStreaming() throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/tenants/", exchange -> {
+            exchange.getResponseHeaders().set("Retry-After", "7");
+            exchange.sendResponseHeaders(429, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var runtime = new HttpAgentRuntime(new RunnerProperties(
+                    URI.create("http://127.0.0.1:" + server.getAddress().getPort()), "test", Duration.ofSeconds(5)));
+            var session = new AgentRuntime.Session(
+                    UUID.randomUUID(), UUID.randomUUID(), "model", List.of(), "", List.of(), List.of());
+            assertThatThrownBy(() -> runtime.admit(session))
+                    .isInstanceOf(ForgeException.class)
+                    .satisfies(error ->
+                            assertThat(((ForgeException) error).args()[0]).isEqualTo(7));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     @Test
     void realHttpAdapterRecreatesLostSessionFromDbSnapshotAndForwardsLiveEvents() throws Exception {
         var json = JsonMapper.builder().build();
@@ -111,7 +205,8 @@ class HttpAgentRuntimeContractTest {
             assertThat(future.isDone()).isFalse();
             finish.countDown();
             future.get(5, TimeUnit.SECONDS);
-            assertThat(events.stream().map(AgentRuntime.Event::type)).containsExactly("delta", "completed");
+            assertThat(events.stream().map(AgentRuntime.Event::type).filter(type -> !type.equals("attempt")))
+                    .containsExactly("delta", "completed");
             assertThat(creates.get()).isEqualTo(2);
             assertThat(prompts.get()).isEqualTo(2);
             assertThat(requests).hasSize(2);

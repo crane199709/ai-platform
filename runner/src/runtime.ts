@@ -24,6 +24,7 @@ export interface SkillSnapshot {
   content: string
 }
 export interface SessionInput {
+  replace?: boolean
   sessionId: string
   model: string
   transcript?: TranscriptMessage[]
@@ -51,6 +52,7 @@ export interface AgentRuntime {
     input: MessageInput,
     emit: (event: RuntimeEvent) => void,
   ): Promise<void>
+  deleteSession(sessionId: string): Promise<void>
   cancel(sessionId: string): Promise<boolean>
   exportSession(sessionId: string): {
     sessionId: string

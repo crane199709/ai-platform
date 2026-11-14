@@ -1,4 +1,4 @@
-import { createRunnerServer } from './server.js'
+import { createRunnerServer, prepareRunnerRoot } from './server.js'
 
 const host = process.env.AI_RUNNER_HOST
 const port = Number(process.env.AI_RUNNER_PORT)
@@ -11,6 +11,7 @@ if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !proxyUrl ||
 }
 const numberOption = (name: string) =>
   process.env[name] === undefined ? undefined : Number(process.env[name])
+await prepareRunnerRoot(rootDir)
 const server = createRunnerServer({
   serviceToken: process.env.AI_RUNNER_SERVICE_TOKEN ?? '',
   proxyUrl,

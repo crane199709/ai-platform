@@ -14,4 +14,8 @@
         <if test="publishedOnly">AND published_version IS NOT NULL</if>
         ORDER BY created_at DESC, id
     </select>
+    <update id="eraseTenantData">
+        UPDATE ai_prompt_template SET name='',content='',variable_names='',deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+    </update>
 </mapper>

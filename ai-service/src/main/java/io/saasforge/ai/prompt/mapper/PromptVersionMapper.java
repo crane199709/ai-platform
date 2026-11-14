@@ -16,4 +16,6 @@ public interface PromptVersionMapper extends BaseMapper<PromptVersion> {
     List<PromptVersion> history(@Param("templateId") UUID templateId);
     /** 必须持有模板行锁时分配下一版本，防止并发发布重号；不受成员级 Data Policy 过滤。 */
     int nextVersion(@Param("templateId") UUID templateId);
+    /** 租户删除专用，清空已逻辑删除行的内容；保留租户拦截/RLS，不按成员范围缩窄。 */
+    void eraseTenantData();
 }

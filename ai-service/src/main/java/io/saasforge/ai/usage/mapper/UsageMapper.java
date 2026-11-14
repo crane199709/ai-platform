@@ -31,4 +31,12 @@ public interface UsageMapper extends BaseMapper<UsageLedger> {
     void rebuildDay(@Param("id") UUID id, @Param("date") LocalDate date);
     /** 查询刚形成的日快照。 */
     DailyUsage day(@Param("date") LocalDate date);
+    /** 租户删除时逻辑清理套餐副本，包含以前已删除行。 */
+    void erasePlan();
+    /** 租户删除时逻辑清理月份锁，包含以前已删除行。 */
+    void eraseMonth();
+    /** 租户删除时逻辑清理计量明细，包含以前已删除行。 */
+    void eraseLedger();
+    /** 租户删除时逻辑清理日汇总，包含以前已删除行。 */
+    void eraseDaily();
 }

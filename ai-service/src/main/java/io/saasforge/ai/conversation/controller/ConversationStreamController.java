@@ -2,6 +2,7 @@ package io.saasforge.ai.conversation.controller;
 
 import io.saasforge.ai.conversation.model.SendMessageRequest;
 import io.saasforge.ai.conversation.service.ConversationStreamingService;
+import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.RequiresPermission;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -30,7 +31,14 @@ public class ConversationStreamController {
             @PathVariable UUID id, @Valid @RequestBody SendMessageRequest request, HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-cache");
         response.setHeader("X-Accel-Buffering", "no");
-        return streaming.send(id, request);
+        try {
+            return streaming.send(id, request);
+        } catch (ForgeException error) {
+            if (error.errorCode().httpStatus() == 429) {
+                response.setHeader("Retry-After", error.args().length > 0 ? error.args()[0].toString() : "5");
+            }
+            throw error;
+        }
     }
     // 断开的 SSE 没有可写响应，避免通用 JSON 异常处理器再次写入已关闭连接。
     @ExceptionHandler(AsyncRequestNotUsableException.class)

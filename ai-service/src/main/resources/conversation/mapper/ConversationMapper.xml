@@ -4,4 +4,40 @@
     <select id="lock" resultType="io.saasforge.ai.conversation.entity.Conversation">
         SELECT * FROM ai_conversation WHERE id = #{id} AND NOT deleted FOR UPDATE
     </select>
+    <sql id="visibleSearch">
+        NOT c.deleted AND c.owner_id = #{owner}
+        <if test="pattern != null">
+            AND (LOWER(c.title) LIKE #{pattern} ESCAPE '!'
+            OR EXISTS (SELECT 1 FROM ai_conversation_message m WHERE m.conversation_id=c.id AND m.tenant_id=c.tenant_id
+            AND NOT m.deleted AND LOWER(m.content) LIKE #{pattern} ESCAPE '!'))
+        </if>
+    </sql>
+    <select id="search" resultType="io.saasforge.ai.conversation.entity.Conversation">
+        SELECT c.* FROM ai_conversation c WHERE
+        <include refid="visibleSearch"/>
+        ORDER BY c.updated_at DESC,c.id DESC LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="countSearch" resultType="long">
+        SELECT COUNT(*) FROM ai_conversation c WHERE
+        <include refid="visibleSearch"/>
+    </select>
+    <select id="expired" resultType="io.saasforge.ai.conversation.entity.Conversation">
+        SELECT * FROM ai_conversation WHERE NOT deleted AND active_turn_id IS NULL AND updated_at &lt; #{cutoff}
+        ORDER BY id LIMIT 100 FOR UPDATE
+    </select>
+    <update id="eraseMessages">
+        UPDATE ai_conversation_message SET content='',tool_calls='[]',tool_name=NULL,deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+        <if test="id != null">AND conversation_id=#{id}</if>
+    </update>
+    <update id="eraseTurns">
+        UPDATE ai_conversation_turn SET recovery_snapshot='[]',idempotency_key=CAST(id AS varchar),status='ERROR',error_code='conversation.deleted',deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+        <if test="id != null">AND conversation_id=#{id}</if>
+    </update>
+    <update id="eraseConversations">
+        UPDATE ai_conversation SET title='',instructions='',skill_snapshot='[]',mcp_snapshot='[]',active_turn_id=NULL,deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+        WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)
+        <if test="id != null">AND id=#{id}</if>
+    </update>
 </mapper>

@@ -119,3 +119,13 @@ JSON 错误体是 `{ "code": "runner.*", "retryable": false/true }`。SSE 开始
 消息请求可选 `tools` 使用与建会话完全相同的严格只读工具结构、去重、最多32项与1MiB总body约束；省略时沿用该Runner会话已保存声明，显式 `[]` 撤下全部工具。Java每回合均带当前重新授权的tools，避免重复create返回409后沿用过期声明。Runner在发起回合前更新session.tools并走原model/tools/instructions/skills fingerprint初始化，配置变化重建该租户进程并重放上下文；不会清除产品历史，也不更新已保存的Java历史快照。此接缝只同步工具声明；失败后DB-authoritative单会话恢复由工单11负责，不能据此宣称create409已同步transcript。
 
 部署升级须先发布支持消息 `tools` 的 Runner，再发布始终发送该字段的 Java AI 服务；旧 Runner 的严格未知字段校验会拒绝新调用。已有 Runner 调用者可继续省略该字段。
+
+## 单会话权威替换与本地清理
+
+工单11增加建会话字段 `replace?: boolean`（默认false）。true在当前租户无活跃回合且已锁住准入时，用给定DB transcript与快照原子替换指定session；其余逻辑session保持历史，必要的进程重建只令它们稍后重放。替换失败不允许将当前用户输入追加两遍。普通重复create仍409 `runner.sessionExists`，调用方不能把其他409错误当成功。Java在SSE之前调用准入，并保留池满的HTTP429/Retry-After。
+
+`DELETE /v1/tenants/{tenantId}/sessions/{sessionId}` 清理单个非活跃会话运行缓存，保留其他会话逻辑历史；`DELETE /v1/tenants/{tenantId}` 继续用于租户删除。两者不存在时均幂等。工具事件增加 `attemptId`，作用域为同一模型请求，使用者以attemptId+callId去重；不改变callId与tool result的关联。
+
+Runner root必须为单实例专属目录。启动先验证 `.ai-platform-runner` 所有权标记：初次空目录认领，非空无标记拒绝，仅清理已认领root内格式为tenant-xxxxxx的残留进程目录。固定profile已禁用JSONL持久化，不以成功后目录仍存在为理由终止可复用进程；真实文件契约验证回合后无聊天JSONL/用户正文。
+
+升级先发布支持replace、单session删除与工具attemptId的Runner，再发布使用它们的Java服务。完整重试、留存与导出语义见 [hardening.md](hardening.md)。

@@ -27,6 +27,11 @@ public class ModelSelectionService {
     private final TenantModelSelectionMapper selections;
     private final MembershipGrantStore grants;
 
+    /** SDK 租户清理事务内调用，包含历史逻辑删除行。 */
+    public void eraseTenantData() {
+        selections.eraseTenantData();
+    }
+
     public ModelSelectionService(
             ModelCatalogService catalog, TenantModelSelectionMapper selections, MembershipGrantStore grants) {
         this.catalog = catalog;

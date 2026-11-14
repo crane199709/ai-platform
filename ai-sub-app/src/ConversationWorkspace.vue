@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ApiError } from '@crane199709/sdk'
+import { ApiError, type Page } from '@crane199709/sdk'
 import { formatDateTime, overlaySize } from '@crane199709/ui'
 import type { Conversation, Message, Model, PromptOption, ToolEvent } from './contracts'
 import { errorTip, isAbort, json, toolTitle, useTenantScope } from './tenant-scope'
 
 const { client, api, signal } = useTenantScope()
 const conversations = ref<Conversation[]>([])
+const query = ref('')
+const appliedQuery = ref('')
+let searchRequest = 0
+const currentPage = ref(1)
+const totalPages = ref(1)
+const searching = ref(false)
 const models = ref<Model[]>([])
 const prompts = ref<PromptOption[]>([])
 const selected = ref<Conversation>()
@@ -86,12 +92,15 @@ async function load() {
   error.value = ''
   try {
     const [items, available, options] = await Promise.all([
-      api<Conversation[]>('/ai/conversations'),
+      client.page<Conversation>('/ai/conversations?page=1&size=20', { signal }),
       api<Model[]>('/ai/models'),
       api<PromptOption[]>('/ai/prompts/published'),
     ])
     loaded.value = true
-    conversations.value = items
+    if (signal.aborted) return
+    conversations.value = items.items
+    currentPage.value = items.page.number
+    totalPages.value = items.page.totalPages
     models.value = available
     prompts.value = options
     modelId.value = available[0]?.id || ''
@@ -135,7 +144,64 @@ function beginCreate() {
   variables.value = {}
   promptId.value = ''
 }
+async function search(more = false) {
+  const request = ++searchRequest
+  const page = more ? currentPage.value + 1 : 1
+  const text = more ? appliedQuery.value : query.value.trim()
+  searching.value = true
+  try {
+    const result: Page<Conversation> = await client.page<Conversation>(
+      `/ai/conversations?query=${encodeURIComponent(text)}&page=${page}&size=20`,
+      { signal },
+    )
+    if (signal.aborted || request !== searchRequest) return
+    conversations.value = more
+      ? [
+          ...conversations.value,
+          ...result.items.filter(
+            (item) => !conversations.value.some((existing) => existing.id === item.id),
+          ),
+        ]
+      : result.items
+    appliedQuery.value = text
+    currentPage.value = result.page.number
+    totalPages.value = result.page.totalPages
+  } catch (e) {
+    if (!isAbort(e) && request === searchRequest) error.value = errorTip(e)
+  } finally {
+    if (!signal.aborted && request === searchRequest) searching.value = false
+  }
+}
+async function download(format: 'markdown' | 'json') {
+  if (!selected.value) return
+  try {
+    const item = selected.value
+    const response = await client.request(
+      `/api/ai/conversations/${item.id}/export?format=${format}`,
+      { signal },
+    )
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new ApiError({ ...body, httpStatus: response.status })
+    }
+    const blob = await response.blob()
+    if (signal.aborted) return
+    const url = URL.createObjectURL(blob)
+    try {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `conversation-${item.id}.${format === 'markdown' ? 'md' : 'json'}`
+      link.click()
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  } catch (e) {
+    if (!isAbort(e) && !signal.aborted) error.value = errorTip(e)
+  }
+}
 function menuCommand(command: string) {
+  if (command === 'markdown' || command === 'json') void download(command)
+
   if (command === 'rename' && selected.value) {
     renameTitle.value = selected.value.title
     renameOpen.value = true
@@ -289,13 +355,22 @@ async function send(retry = false) {
             .join('\n')
           if (!event || !data) continue
           const value = JSON.parse(data)
+          if (event === 'retrying') {
+            reply.content = ''
+            tools.value = []
+            closeApprovals()
+            approvals.value = []
+            notice.value =
+              '运行服务已恢复，正在重新生成本次回答；只读工具可能再次查询，敏感工具需要重新批准。'
+          }
           if (event === 'token') {
             reply.content += String(value.text || '')
             await scroll()
           }
           if (event === 'tool') {
             const index = tools.value.findIndex(
-              (tool) => value.callId && tool.callId === value.callId,
+              (tool) =>
+                value.callId && tool.callId === value.callId && tool.attemptId === value.attemptId,
             )
             if (index >= 0) tools.value[index] = { ...tools.value[index], ...value }
             else tools.value.push(value)
@@ -316,11 +391,13 @@ async function send(retry = false) {
             pending = undefined
           }
           if (event === 'error') {
+            notice.value = ''
             ended = true
             attempt.uncertain = false
             error.value = /quota/i.test(value.code)
               ? '本月 AI 配额已耗尽，请联系租户管理员。'
-              : '回答未完成，已保留部分内容。可以重试发送。'
+              : '回答未完成，已保留部分内容。点击重试将重新发送为新回合。'
+            await scroll()
           }
         }
         if (chunk.done || ended) break
@@ -328,8 +405,11 @@ async function send(retry = false) {
     } finally {
       await reader.cancel().catch(() => {})
     }
-    if (!ended && !signal.aborted)
+    if (!ended && !signal.aborted) {
+      notice.value = ''
       error.value = '连接中断，已保留部分回答。重试将核对同一条消息，不会重复提交。'
+      await scroll()
+    }
     if (ended && !signal.aborted) {
       const fresh = await api<Conversation>(`/ai/conversations/${item.id}`)
       if (selected.value?.id === item.id) selected.value = fresh
@@ -382,8 +462,19 @@ function historicalTools(message: Message): ToolEvent[] {
         @click="beginCreate"
         >新建会话</el-button
       >
-      <el-input aria-label="搜索历史会话" placeholder="搜索历史会话" disabled />
-      <el-empty v-if="loaded && !conversations.length" description="暂无会话" :image-size="72" />
+      <el-input
+        v-model="query"
+        aria-label="搜索历史会话"
+        placeholder="搜索标题或正文，Enter 查询"
+        clearable
+        @keydown.enter="search(false)"
+        @clear="search(false)"
+      />
+      <el-empty
+        v-if="loaded && !conversations.length"
+        :description="appliedQuery ? '没有匹配的会话' : '暂无会话'"
+        :image-size="72"
+      />
       <button
         v-for="item in conversations"
         :key="item.id"
@@ -396,6 +487,9 @@ function historicalTools(message: Message): ToolEvent[] {
         <strong>{{ item.title }}</strong
         ><span>{{ formatDateTime(item.updatedAt) }}</span>
       </button>
+      <el-button v-if="currentPage < totalPages" :loading="searching" @click="search(true)"
+        >加载更多会话</el-button
+      >
     </aside>
     <main v-loading="detailLoading" class="chat" aria-label="会话内容">
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
@@ -438,6 +532,8 @@ function historicalTools(message: Message): ToolEvent[] {
             <template #dropdown
               ><el-dropdown-menu
                 ><el-dropdown-item command="rename">重命名</el-dropdown-item
+                ><el-dropdown-item command="markdown">导出 Markdown</el-dropdown-item
+                ><el-dropdown-item command="json">导出 JSON</el-dropdown-item
                 ><el-dropdown-item command="delete" divided
                   >删除会话</el-dropdown-item
                 ></el-dropdown-menu
@@ -678,6 +774,10 @@ function historicalTools(message: Message): ToolEvent[] {
   flex-direction: column;
   gap: var(--forge-space-4);
   padding: var(--forge-space-3);
+}
+/* 状态提示占用首屏空间，保留取消与重试入口，不让它们落到首屏之外。 */
+.chat:has(> .el-alert) .messages {
+  max-height: calc(52vh - var(--forge-space-5) - var(--forge-space-5));
 }
 .message {
   padding: var(--forge-space-3);

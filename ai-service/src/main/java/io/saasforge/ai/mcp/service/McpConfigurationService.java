@@ -36,6 +36,13 @@ public class McpConfigurationService {
     private final MembershipGrantStore grants;
     private final McpToolGrantMapper toolGrants;
 
+    /** SDK 租户清理事务内调用，包含历史逻辑删除行。 */
+    public void eraseTenantData() {
+        configurations.eraseTenantData();
+        versions.eraseTenantData();
+        toolGrants.eraseTenantData();
+    }
+
     public McpConfigurationService(
             McpCatalogService catalog,
             McpConfigurationMapper configurations,

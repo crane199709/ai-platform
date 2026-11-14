@@ -65,6 +65,7 @@ export interface SkillVersion {
   skillVersion?: number
 }
 export interface ToolEvent {
+  attemptId?: string
   phase: string
   name?: string
   nativeName?: string

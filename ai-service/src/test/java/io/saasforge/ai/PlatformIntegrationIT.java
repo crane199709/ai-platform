@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.saasforge.ai.contract.entity.ContractRecord;
 import io.saasforge.ai.contract.mapper.ContractMapper;
+import io.saasforge.ai.lifecycle.service.ConversationRetentionService;
 import io.saasforge.ai.mcp.service.McpTransport;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.ProviderTransport;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
+import io.saasforge.ai.runner.service.RunnerErrorCode;
 import io.saasforge.sdk.audit.AuditLog;
 import io.saasforge.sdk.core.CurrentTenant;
 import io.saasforge.sdk.core.api.ApiResponse;
@@ -16,7 +18,9 @@ import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.manifest.ResourceManifestCollector;
 import io.saasforge.sdk.mq.EventPublisher;
 import io.saasforge.sdk.provisioning.TenantCreated;
+import io.saasforge.sdk.provisioning.TenantDeleted;
 import io.saasforge.sdk.provisioning.TenantPlanChanged;
+import io.saasforge.sdk.provisioning.TenantStatusChanged;
 import io.saasforge.sdk.security.RequiresPermission;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -48,6 +52,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -106,6 +112,8 @@ class PlatformIntegrationIT {
     static final UUID MEMBER_B = UUID.fromString("019a2525-0000-7000-8000-000000000032");
     static final String IDENTITY = "019a2525-0000-7000-8000-000000000011";
     static final PlatformEnvironment platform = new PlatformEnvironment();
+    static final AtomicReference<String> MODEL_SECRET = new AtomicReference<>("test-provider-secret");
+    static final AtomicReference<String> MCP_SECRET = new AtomicReference<>("test-tenant-mcp-key-never-log");
     String tokenA;
     String tokenB;
     String operator;
@@ -131,18 +139,18 @@ class PlatformIntegrationIT {
         registry.add("forge.manifest.enabled", () -> true);
         registry.add("forge.ops.token", () -> PlatformEnvironment.OPS);
         registry.add("forge.mq.enabled", () -> true);
-        registry.add("CONVERSATION_TEST_KEY", () -> "test-provider-secret");
+        registry.add("CONVERSATION_TEST_KEY", MODEL_SECRET::get);
         registry.add("ai.mcp.trusted-business-origins", () -> "https://business.example.test");
         registry.add(
                 "ai.mcp.secret-references",
                 () -> "AI_MCP_019A2525000070008000000000000001_019A2525090070008000000000000081");
-        registry.add(
-                "AI_MCP_019A2525000070008000000000000001_019A2525090070008000000000000081",
-                () -> "test-tenant-mcp-key-never-log");
+        registry.add("AI_MCP_019A2525000070008000000000000001_019A2525090070008000000000000081", MCP_SECRET::get);
         registry.add("NON_MODEL_TEST_KEY", () -> "must-not-forward");
         registry.add("forge.mq.ssl", () -> false);
         registry.add("forge.mq.endpoints", platform::mqEndpoints);
         registry.add("forge.tenant.write-guard.enabled", () -> true);
+        registry.add("ai.retention.plan-days.long-plan", () -> 180);
+        registry.add("ai.retention.tenant-days[019a2525-0011-7000-8000-000000000100]", () -> 60);
     }
 
     @LocalServerPort
@@ -674,6 +682,553 @@ class PlatformIntegrationIT {
         call(platform.gateway(), HttpMethod.GET, path + "/" + id, tokenA, null, 404);
     }
 
+    @Test
+    void searchesLiteralTitleAndBodyAndExportsOnlyVisibleTranscript() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "中文 100%_归档", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        sendMessage(id, "唯一正文检索", UUID.randomUUID().toString(), tokenA);
+        for (String query : List.of("100%_", "唯一正文检索")) {
+            String path = "/ai/conversations?query=" + query + "&size=1";
+            var result = call(platform.gateway(), HttpMethod.GET, path, tokenA, null, 200)
+                    .path("data");
+            assertThat(result).hasSize(1);
+            assertThat(result.get(0).path("id").asText()).isEqualTo(id);
+            assertThat(call(platform.gateway(), HttpMethod.GET, path, tokenB, null, 200)
+                            .path("data"))
+                    .isEmpty();
+        }
+        for (String format : List.of("markdown", "json")) {
+            var response = HttpClient.newHttpClient()
+                    .send(
+                            HttpRequest.newBuilder(URI.create(platform.gateway() + "/ai/conversations/" + id
+                                            + "/export?format=" + format))
+                                    .header("Authorization", "Bearer " + tokenA)
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(response.headers().firstValue("Content-Disposition").orElseThrow())
+                    .contains("attachment");
+            assertThat(response.body())
+                    .contains("中文 100%_归档", "唯一正文检索", "hello world")
+                    .doesNotContain("instructions", "skillSnapshot", "mcpSnapshot", "secretReference", "contextToken");
+            call(
+                    platform.gateway(),
+                    HttpMethod.GET,
+                    "/ai/conversations/" + id + "/export?format=" + format,
+                    tokenB,
+                    null,
+                    404);
+        }
+        call(platform.gateway(), HttpMethod.DELETE, "/ai/conversations/" + id, tokenA, null, 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/conversations?query=100%_", tokenA, null, 200)
+                        .path("data"))
+                .isEmpty();
+    }
+
+    @Autowired
+    ConversationRetentionService retention;
+
+    @Autowired
+    ContractMapper hardeningData;
+
+    @Test
+    void retentionRemovesExpiredConversationContentAndPreservesFreshHistory() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "保留期已过", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        sendMessage(id, "crash partial", UUID.randomUUID().toString(), tokenA);
+        UUID recoveredTurn =
+                UUID.fromString(call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("turns")
+                        .get(0)
+                        .path("id")
+                        .asText());
+        CurrentTenant.run(
+                TENANT_A,
+                () -> assertThat(hardeningData.recoverySnapshot(recoveredTurn)).contains("abandoned partial"));
+        CurrentTenant.run(
+                TENANT_A,
+                () -> new TransactionTemplate(usageTransactions)
+                        .executeWithoutResult(status -> hardeningData.ageConversation(UUID.fromString(id))));
+        String fresh = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Fresh retention", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        retention.run();
+        call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + fresh, tokenA, null, 200);
+        call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, tokenA, null, 404);
+        CurrentTenant.run(
+                TENANT_A,
+                () -> assertThat(hardeningData.recoverySnapshot(recoveredTurn)).isEqualTo("[]"));
+        CurrentTenant.run(
+                TENANT_A,
+                () -> assertThat(hardeningData.remainingConversationContent(UUID.fromString(id)))
+                        .isZero());
+        retention.run();
+    }
+
+    @Test
+    void poolAdmissionReturnsActual429WithRetryAfterAndCompletedKeyDoesNotReadmit() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Pool admission", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String key = UUID.randomUUID().toString();
+        runtime.capacityDenied.add(UUID.fromString(id));
+        var response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder(URI.create(platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                .header("Authorization", "Bearer " + tokenA)
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString(JsonMapper.builder()
+                                        .build()
+                                        .writeValueAsString(Map.of("text", "admission", "idempotencyKey", key))))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(429);
+        assertThat(response.headers().firstValue("Retry-After").orElseThrow()).isEqualTo("7");
+        assertThat(response.body()).contains("runner.poolFull");
+        runtime.capacityDenied.remove(UUID.fromString(id));
+        assertThat(sendMessage(id, "admission", key, tokenA)).contains("replayed", "event:error");
+        assertThat(runtime.requests.stream()
+                        .filter(run -> run.session().sessionId().toString().equals(id)))
+                .isEmpty();
+        var detail = call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, tokenA, null, 200)
+                .path("data");
+        assertThat(detail.path("messages")).hasSize(1);
+        assertThat(detail.path("activeTurnId").isMissingNode()
+                        || detail.path("activeTurnId").isNull())
+                .isTrue();
+    }
+
+    static final Map<String, List<Integer>> providerScenarios = new ConcurrentHashMap<>();
+    static final List<String> providerPrompts = new CopyOnWriteArrayList<>();
+    static final List<String> providerSecrets = new CopyOnWriteArrayList<>();
+
+    @Test
+    void transientModelHttpStatusesRetryButAuthenticationDoesNotAndUnknownCostSurvivesSuccess() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Model retries", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var statuses = new CopyOnWriteArrayList<Integer>();
+        for (int failure : List.of(503, 401)) {
+            String marker = "retry-" + failure + "-" + UUID.randomUUID();
+            providerScenarios.put(marker, new CopyOnWriteArrayList<>(List.of(failure, 200)));
+            runtime.toolProbes.put(
+                    UUID.fromString(id),
+                    run -> statuses.add(runtime.proxy(
+                            run,
+                            run.contextToken(),
+                            TENANT_A.toString(),
+                            Map.of(
+                                    "model",
+                                    model,
+                                    "stream",
+                                    true,
+                                    "max_tokens",
+                                    10,
+                                    "messages",
+                                    List.of(Map.of("role", "user", "content", marker))))));
+            sendMessage(id, "retry model " + failure, UUID.randomUUID().toString(), tokenA);
+            assertThat(providerPrompts.stream().filter(marker::equals).count()).isEqualTo(failure == 503 ? 2 : 1);
+        }
+        runtime.toolProbes.remove(UUID.fromString(id));
+        assertThat(statuses).containsExactly(200, 502);
+        var usage = call(platform.gateway(), HttpMethod.GET, "/ai/usage", tokenA, null, 200)
+                .path("data");
+        assertThat(usage.path("estimatedTokens").asLong()).isGreaterThan(0);
+        assertThat(usage.path("unknownUsageTurns").asLong()).isGreaterThan(0);
+    }
+
+    static final UUID CLEANUP_TENANT = UUID.fromString("019a2525-0011-7000-8000-000000000000");
+
+    @Test
+    @Sql("/platform/hardening-delete.sql")
+    void tenantDeletedRetriesFailedRunnerCleanupThenErasesAllBusinessContentIdempotently() {
+        runtime.cleanupFailures.put(CLEANUP_TENANT, new AtomicInteger(1));
+        CurrentTenant.run(
+                CLEANUP_TENANT,
+                () -> new TransactionTemplate(usageTransactions)
+                        .executeWithoutResult(
+                                status -> usageEvents.publish("forge-tenant", new TenantDeleted(CLEANUP_TENANT))));
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(90))
+                .untilAsserted(() -> CurrentTenant.run(CLEANUP_TENANT, () -> {
+                    assertThat(runtime.cleanupAttempts.getOrDefault(CLEANUP_TENANT, 0))
+                            .isGreaterThanOrEqualTo(2);
+                    assertThat(hardeningData.remainingTenantContent()).isZero();
+                    assertThat(hardeningData.retainedPlatformCatalogs()).isEqualTo(3);
+                }));
+        CurrentTenant.run(
+                CLEANUP_TENANT,
+                () -> new TransactionTemplate(usageTransactions)
+                        .executeWithoutResult(
+                                status -> usageEvents.publish("forge-tenant", new TenantDeleted(CLEANUP_TENANT))));
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(60))
+                .untilAsserted(() ->
+                        assertThat(runtime.cleanupAttempts.get(CLEANUP_TENANT)).isGreaterThanOrEqualTo(3));
+        CurrentTenant.run(
+                CLEANUP_TENANT,
+                () -> assertThat(hardeningData.remainingTenantContent()).isZero());
+    }
+
+    @Test
+    void modelSecretRotationUsesSameReferenceOnNextTurnWithoutSendingSecretsToRunnerOrExport() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Rotation", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        int before = providerSecrets.size();
+        runtime.toolProbes.put(
+                UUID.fromString(id),
+                run -> assertThat(runtime.proxy(
+                                run,
+                                run.contextToken(),
+                                TENANT_A.toString(),
+                                Map.of(
+                                        "model",
+                                        model,
+                                        "stream",
+                                        true,
+                                        "max_tokens",
+                                        10,
+                                        "messages",
+                                        List.of(Map.of("role", "user", "content", "rotation")))))
+                        .isEqualTo(200));
+        try {
+            sendMessage(id, "before rotation", UUID.randomUUID().toString(), tokenA);
+            MODEL_SECRET.set("rotated-provider-secret");
+            sendMessage(id, "after rotation", UUID.randomUUID().toString(), tokenA);
+            assertThat(providerSecrets.subList(before, providerSecrets.size()))
+                    .containsExactly("test-provider-secret", "rotated-provider-secret");
+            assertThat(JsonMapper.builder()
+                            .build()
+                            .writeValueAsString(runtime.requests.stream()
+                                    .filter(run ->
+                                            run.session().sessionId().toString().equals(id))
+                                    .toList()))
+                    .doesNotContain("test-provider-secret", "rotated-provider-secret", "CONVERSATION_TEST_KEY");
+            var download = HttpClient.newHttpClient()
+                    .send(
+                            HttpRequest.newBuilder(URI.create(
+                                            platform.gateway() + "/ai/conversations/" + id + "/export?format=json"))
+                                    .header("Authorization", "Bearer " + tokenA)
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+            assertThat(download.statusCode()).isEqualTo(200);
+            assertThat(download.body())
+                    .doesNotContain("test-provider-secret", "rotated-provider-secret", "CONVERSATION_TEST_KEY");
+        } finally {
+            MODEL_SECRET.set("test-provider-secret");
+            runtime.toolProbes.remove(UUID.fromString(id));
+        }
+    }
+
+    @Test
+    @Sql("/platform/hardening-retention.sql")
+    void retentionScansSuspendedAndExpiredIamTenantsWithPlanAndTenantPrecedence() {
+        UUID suspended = UUID.fromString("019a2525-0011-7000-8000-000000000100");
+        UUID expired = UUID.fromString("019a2525-0011-7000-8000-000000000200");
+        for (var tenant : List.of(suspended, expired)) {
+            CurrentTenant.run(
+                    tenant,
+                    () -> new TransactionTemplate(usageTransactions)
+                            .executeWithoutResult(status -> usageEvents.publish(
+                                    "forge-tenant",
+                                    new TenantStatusChanged(
+                                            tenant,
+                                            "Retention verification",
+                                            "active",
+                                            tenant.equals(suspended) ? "suspended" : "expired",
+                                            1))));
+        }
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var directory = call(
+                            platform.iam(),
+                            HttpMethod.GET,
+                            "/internal/tenants?status=suspended,expired&page=1&size=100",
+                            platform.aiToken,
+                            null,
+                            200)
+                    .path("data")
+                    .toString();
+            assertThat(directory).contains(suspended.toString(), expired.toString());
+        });
+        retention.run();
+        CurrentTenant.run(
+                suspended,
+                () -> assertThat(hardeningData.remainingConversationContent(suspended))
+                        .isZero());
+        CurrentTenant.run(
+                expired,
+                () -> assertThat(hardeningData.remainingConversationContent(expired))
+                        .isEqualTo(1));
+    }
+
+    @Test
+    void distinctModelAttemptsCanReuseToolCallIdWhileSameAttemptRedeliveryIsDeduplicated() throws Exception {
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Tool attempts", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        long before = usage(tokenA).path("toolCalls").asLong();
+        sendMessage(id, "reused tool id", UUID.randomUUID().toString(), tokenA);
+        assertThat(usage(tokenA).path("toolCalls").asLong()).isEqualTo(before + 2);
+    }
+
+    @Test
+    void crashedTurnReplaysOnceWithResetAndFreshCapabilityWhileKeepingOneUserAndAllAttemptCosts() throws Exception {
+        for (String mode : List.of("partial", "tool", "twice")) {
+            String model = createConversationModel();
+            String id = call(
+                            platform.gateway(),
+                            HttpMethod.POST,
+                            "/ai/conversations",
+                            tokenA,
+                            Map.of("title", "Recover " + mode, "modelId", model),
+                            201)
+                    .path("data")
+                    .path("id")
+                    .asText();
+            String key = UUID.randomUUID().toString();
+            String events = sendMessage(id, "crash " + mode, key, tokenA);
+            assertThat(events).contains("event:retrying", "abandoned partial");
+            assertThat(events).contains(mode.equals("twice") ? "event:error" : "event:done");
+            assertThat(events.split("event:retrying", -1)).hasSize(2);
+            var runs = runtime.requests.stream()
+                    .filter(run -> run.session().sessionId().toString().equals(id))
+                    .toList();
+            assertThat(runs).hasSize(2);
+            assertThat(runs.get(0).contextToken()).isNotEqualTo(runs.get(1).contextToken());
+            assertThat(runs.get(1).session().transcript()).isEmpty();
+            var detail = call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, tokenA, null, 200)
+                    .path("data");
+            assertThat(detail.path("messages")).hasSize(2);
+            assertThat(detail.path("messages").get(0).path("content").asText()).isEqualTo("crash " + mode);
+            assertThat(detail.path("messages").get(1).path("content").asText())
+                    .isEqualTo(mode.equals("twice") ? "abandoned partial" : "recovered answer");
+            UUID turn = UUID.fromString(detail.path("turns").get(0).path("id").asText());
+            CurrentTenant.run(TENANT_A, () -> {
+                String snapshot = hardeningData.recoverySnapshot(turn);
+                assertThat(snapshot)
+                        .contains("abandoned partial")
+                        .doesNotContain(
+                                "private arguments",
+                                runs.get(0).contextToken(),
+                                runs.get(1).contextToken());
+                if (mode.equals("tool")) {
+                    assertThat(snapshot).contains("retained tool result");
+                }
+                assertThat(JsonMapper.builder().build().readTree(snapshot)).hasSize(mode.equals("twice") ? 2 : 1);
+                assertThat(hardeningData.modelCalls(turn)).isEqualTo(2);
+            });
+            sendMessage(id, "crash " + mode, key, tokenA);
+            assertThat(runtime.requests.stream()
+                            .filter(run -> run.session().sessionId().toString().equals(id))
+                            .count())
+                    .isEqualTo(2);
+            call(platform.gateway(), HttpMethod.DELETE, "/ai/conversations/" + id, tokenA, null, 200);
+            CurrentTenant.run(
+                    TENANT_A,
+                    () -> assertThat(hardeningData.recoverySnapshot(turn)).isEqualTo("[]"));
+        }
+    }
+
+    @Test
+    void recoveryBudgetOverflowSettlesTheTurnAndPreservesAcceptedResultsAcrossAttempts() throws Exception {
+        for (String mode : List.of("single", "recovered", "unicode")) {
+            String model = createConversationModel();
+            String id = call(
+                            platform.gateway(),
+                            HttpMethod.POST,
+                            "/ai/conversations",
+                            tokenA,
+                            Map.of("title", "Recovery budget " + mode, "modelId", model),
+                            201)
+                    .path("data")
+                    .path("id")
+                    .asText();
+            String key = UUID.randomUUID().toString();
+            long before = usage(tokenA).path("turnCount").asLong();
+            String events = sendMessage(id, "recovery budget " + mode, key, tokenA);
+            assertThat(events).contains("event:error", "conversation.limit").doesNotContain("persistenceFailure");
+            var detail = call(platform.gateway(), HttpMethod.GET, "/ai/conversations/" + id, tokenA, null, 200)
+                    .path("data");
+            assertThat(detail.path("turns").get(0).path("status").asText()).isEqualTo("ERROR");
+            assertThat(detail.path("messages")).hasSize(2);
+            assertThat(detail.path("messages").get(1).path("content").asText()).isEqualTo("accepted partial");
+            UUID turn = UUID.fromString(detail.path("turns").get(0).path("id").asText());
+            CurrentTenant.run(TENANT_A, () -> {
+                String saved = hardeningData.recoverySnapshot(turn);
+                assertThat(saved.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(2097152);
+                var snapshots = JsonMapper.builder().build().readTree(saved);
+                assertThat(snapshots).hasSize(mode.equals("recovered") ? 2 : 1);
+                int resultCount = 0;
+                for (var snapshot : snapshots) {
+                    for (var result : snapshot.path("results")) {
+                        assertThat(result.path("content").asText())
+                                .isEqualTo(mode.equals("unicode") ? "中".repeat(42000) : "x".repeat(128000));
+                        resultCount++;
+                    }
+                }
+                assertThat(resultCount).isEqualTo(16);
+            });
+            assertThat(usage(tokenA).path("activeTurns").asLong()).isZero();
+            assertThat(usage(tokenA).path("turnCount").asLong()).isEqualTo(before + 1);
+            assertThat(sendMessage(id, "recovery budget " + mode, key, tokenA))
+                    .contains("replayed", "conversation.limit");
+            assertThat(usage(tokenA).path("turnCount").asLong()).isEqualTo(before + 1);
+        }
+    }
+
+    @Test
+    void replayedSensitiveReadOnlyCallRequiresANewOwnerApproval() throws Exception {
+        String model = createConversationModel();
+        String base = "http://127.0.0.1:" + port;
+        String catalog = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/mcp",
+                        operator,
+                        Map.of(
+                                "name",
+                                "Recovery approval",
+                                "url",
+                                "https://mcp.example.test/recovery-approval",
+                                "protocol",
+                                "STREAMABLE_HTTP",
+                                "credentialMode",
+                                "PUBLIC",
+                                "isolation",
+                                "PUBLIC_DATA",
+                                "tools",
+                                List.of(Map.of(
+                                        "name",
+                                        "lookup",
+                                        "description",
+                                        "Readonly recovery",
+                                        "inputSchema",
+                                        Map.of("type", "object"),
+                                        "permission",
+                                        "ai:mcp:read",
+                                        "readOnly",
+                                        true,
+                                        "requiresApproval",
+                                        true))),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/mcp/" + catalog + "/publish", operator, Map.of(), 200);
+        publishMcpSelection(catalog, tokenA, List.of("lookup"));
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Recovery approval", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String alias = mcpAlias(catalog, tokenA);
+        runtime.toolProbes.put(
+                UUID.fromString(id),
+                run -> toolCall(
+                        run,
+                        run.contextToken(),
+                        TENANT_A.toString(),
+                        id,
+                        Map.of("name", alias, "arguments", Map.of()),
+                        200));
+        try {
+            var response = openMessage(id, "crash approval", tokenA);
+            try (var reader = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                String first = readApproval(reader).path("approvalId").asText();
+                call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/mcp/approvals/" + first + "/decision",
+                        tokenA,
+                        Map.of("approved", true),
+                        200);
+                String second = readApproval(reader).path("approvalId").asText();
+                assertThat(second).isNotEqualTo(first);
+                call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/mcp/approvals/" + second + "/decision",
+                        tokenA,
+                        Map.of("approved", true),
+                        200);
+                assertThat(reader.lines().collect(Collectors.joining("\n"))).contains("event:done");
+            }
+            assertThat(mcpTransport.calls.stream()
+                            .filter(request -> request.uri().getPath().equals("/recovery-approval")
+                                    && request.body().path("method").asText().equals("tools/call"))
+                            .count())
+                    .isEqualTo(2);
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(id));
+        }
+    }
+
     @Autowired
     FakeAgentRuntime runtime;
 
@@ -1123,6 +1678,25 @@ class PlatformIntegrationIT {
             this.capabilities = capabilities;
         }
 
+        final Map<UUID, AtomicInteger> cleanupFailures = new ConcurrentHashMap<>();
+        final Map<UUID, Integer> cleanupAttempts = new ConcurrentHashMap<>();
+
+        public void deleteTenant(UUID tenantId) {
+            cleanupAttempts.merge(tenantId, 1, Integer::sum);
+            var failures = cleanupFailures.get(tenantId);
+            if (failures != null && failures.getAndDecrement() > 0) {
+                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+            }
+        }
+
+        final Set<UUID> capacityDenied = ConcurrentHashMap.newKeySet();
+
+        public void admit(Session session) {
+            if (capacityDenied.contains(session.sessionId())) {
+                throw new ForgeException(RunnerErrorCode.POOL_FULL, 7);
+            }
+        }
+
         final List<Run> requests = new CopyOnWriteArrayList<>();
         final Map<UUID, Consumer<Run>> toolProbes = new ConcurrentHashMap<>();
         final Set<UUID> cancelled = ConcurrentHashMap.newKeySet();
@@ -1132,6 +1706,22 @@ class PlatformIntegrationIT {
 
         public void run(Run request, Consumer<Event> emit) {
             requests.add(request);
+            if (request.text().equals("reused tool id")) {
+                var json = JsonMapper.builder().build();
+                for (String attempt : List.of("model-attempt-1", "model-attempt-2")) {
+                    var event = new Event(
+                            "tool.call",
+                            json.valueToTree(Map.of("attemptId", attempt, "name", "lookup", "callId", "call_1")));
+                    emit.accept(event);
+                    emit.accept(event);
+                    emit.accept(new Event(
+                            "tool.result",
+                            json.valueToTree(Map.of(
+                                    "attemptId", attempt, "name", "lookup", "callId", "call_1", "isError", false))));
+                }
+                emit.accept(new Event("completed", json.valueToTree(Map.of("usageReported", false))));
+                return;
+            }
             if (request.text().equals("metered tool pause")) {
                 var json = JsonMapper.builder().build();
                 var call = new Event(
@@ -1164,13 +1754,105 @@ class PlatformIntegrationIT {
                 return;
             }
             if (request.text().equals("pool full before execution")) {
-                throw new ForgeException(io.saasforge.ai.runner.service.RunnerErrorCode.UNAVAILABLE);
+                throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
             }
             var probe = toolProbes.get(request.session().sessionId());
             if (probe != null) {
                 probe.accept(request);
             }
 
+            if (request.text().startsWith("recovery budget ")) {
+                var json = JsonMapper.builder().build();
+                long execution = requests.stream()
+                        .filter(run -> run.session()
+                                .sessionId()
+                                .equals(request.session().sessionId()))
+                        .count();
+                for (char value : "accepted partial".toCharArray()) {
+                    emit.accept(new Event("delta", json.valueToTree(Map.of("text", String.valueOf(value)))));
+                }
+                int count = request.text().endsWith("recovered") ? 10 : 20;
+                for (int i = 0; i < count; i++) {
+                    emit.accept(
+                            new Event("tool.call", json.valueToTree(Map.of("name", "lookup", "callId", "call_" + i))));
+                    emit.accept(new Event(
+                            "tool.result",
+                            json.valueToTree(Map.of(
+                                    "name",
+                                    "lookup",
+                                    "callId",
+                                    "call_" + i,
+                                    "content",
+                                    request.text().endsWith("unicode") ? "中".repeat(42000) : "x".repeat(128000),
+                                    "isError",
+                                    false))));
+                }
+                emit.accept(new Event(
+                        "error",
+                        json.valueToTree(Map.of(
+                                "code",
+                                request.text().endsWith("recovered") && execution == 1
+                                        ? "runner.runtimeExited"
+                                        : "runner.modelFailure"))));
+                return;
+            }
+            if (request.text().startsWith("crash ")) {
+                long execution = requests.stream()
+                        .filter(run -> run.session()
+                                .sessionId()
+                                .equals(request.session().sessionId()))
+                        .count();
+                var json = JsonMapper.builder().build();
+                if (execution == 1 || request.text().equals("crash twice")) {
+                    emit.accept(new Event("delta", json.valueToTree(Map.of("text", "abandoned partial"))));
+                    if (request.text().equals("crash tool")) {
+                        emit.accept(new Event(
+                                "tool.call",
+                                json.valueToTree(Map.of(
+                                        "attemptId",
+                                        "first-model",
+                                        "name",
+                                        "lookup",
+                                        "callId",
+                                        "call_1",
+                                        "arguments",
+                                        "private arguments"))));
+                        emit.accept(new Event(
+                                "tool.result",
+                                json.valueToTree(Map.of(
+                                        "attemptId",
+                                        "first-model",
+                                        "name",
+                                        "lookup",
+                                        "callId",
+                                        "call_1",
+                                        "content",
+                                        "retained tool result",
+                                        "isError",
+                                        false))));
+                    }
+                    emit.accept(new Event("error", json.valueToTree(Map.of("code", "runner.runtimeExited"))));
+                } else {
+                    var previous = requests.stream()
+                            .filter(run -> run.session()
+                                    .sessionId()
+                                    .equals(request.session().sessionId()))
+                            .findFirst()
+                            .orElseThrow();
+                    org.assertj.core.api.Assertions.assertThatThrownBy(() -> capabilities.authorize(
+                                    previous.contextToken(),
+                                    request.session().tenantId(),
+                                    request.session().sessionId(),
+                                    "model:chat"))
+                            .isInstanceOf(ForgeException.class);
+                    emit.accept(new Event("delta", json.valueToTree(Map.of("text", "recovered answer"))));
+                    emit.accept(new Event(
+                            "completed",
+                            json.valueToTree(Map.of(
+                                    "usageReported", true, "usage", Map.of("inputTokens", 3, "outputTokens", 2)))));
+                }
+                return;
+            }
             if (request.text().startsWith("audit skill ")) {
                 var json = JsonMapper.builder().build();
                 String callId = "skill-call-" + UUID.randomUUID();
@@ -2761,7 +3443,11 @@ class PlatformIntegrationIT {
         try {
             assertThat(sendMessage(id, "credentials", UUID.randomUUID().toString(), tokenA))
                     .contains("event:done");
+            MCP_SECRET.set("rotated-tenant-mcp-key-never-log");
+            assertThat(sendMessage(id, "rotated credentials", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:done");
         } finally {
+            MCP_SECRET.set("test-tenant-mcp-key-never-log");
             runtime.toolProbes.remove(UUID.fromString(id));
         }
         String other = call(
@@ -2796,10 +3482,13 @@ class PlatformIntegrationIT {
                 .filter(c -> c.uri().toString().equals("https://mcp.example.test/tenant"))
                 .toList();
         assertThat(external).isNotEmpty();
+        assertThat(external.stream()
+                        .map(request -> request.headers().get("Authorization"))
+                        .toList())
+                .contains("Bearer test-tenant-mcp-key-never-log", "Bearer rotated-tenant-mcp-key-never-log");
         for (var request : external) {
-            assertThat("Bearer test-tenant-mcp-key-never-log"
-                            .equals(request.headers().get("Authorization")))
-                    .isTrue();
+            assertThat(request.headers().get("Authorization"))
+                    .isIn("Bearer test-tenant-mcp-key-never-log", "Bearer rotated-tenant-mcp-key-never-log");
             assertThat(request.body().toString()).doesNotContain(tokenA, "test-tenant-mcp-key");
         }
         var business = mcpTransport.calls.stream()
@@ -3176,15 +3865,26 @@ class PlatformIntegrationIT {
         ProviderTransport fakeProviderTransport() {
             return (endpoint, secret, body) -> {
                 assertThat(endpoint.toString()).isEqualTo("https://models.example.test/v1/chat/completions");
-                assertThat(secret).isEqualTo("test-provider-secret");
+                assertThat(secret).isEqualTo(MODEL_SECRET.get());
                 assertThat(JsonMapper.builder()
                                 .build()
                                 .readTree(body)
                                 .path("model")
                                 .asText())
                         .startsWith("conversation-");
+                String marker = JsonMapper.builder()
+                        .build()
+                        .readTree(body)
+                        .path("messages")
+                        .get(0)
+                        .path("content")
+                        .asText();
+                providerPrompts.add(marker);
+                providerSecrets.add(secret);
+                var scenario = providerScenarios.get(marker);
+                int status = scenario == null || scenario.isEmpty() ? 200 : scenario.remove(0);
                 return new ProviderTransport.Response(
-                        200,
+                        status,
                         "text/event-stream",
                         new ByteArrayInputStream("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8)));
             };

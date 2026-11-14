@@ -51,4 +51,8 @@
         SELECT usage_date,snapshot_version AS version,input_tokens,output_tokens,cached_input_tokens,turn_count,tool_calls,unknown_usage_turns,estimated_tokens,reported_at
         FROM ai_usage_daily WHERE usage_date=#{date} AND NOT deleted
     </select>
+    <update id="erasePlan">UPDATE ai_usage_plan SET deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)</update>
+    <update id="eraseMonth">UPDATE ai_usage_month SET deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)</update>
+    <update id="eraseLedger">UPDATE ai_usage_ledger SET tool_call_ids='[]',deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)</update>
+    <update id="eraseDaily">UPDATE ai_usage_daily SET deleted=true,updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE tenant_id=CAST(current_setting('app.tenant_id') AS uuid)</update>
 </mapper>

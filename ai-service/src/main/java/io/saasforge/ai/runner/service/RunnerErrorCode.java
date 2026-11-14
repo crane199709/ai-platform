@@ -3,6 +3,8 @@ package io.saasforge.ai.runner.service;
 import io.saasforge.sdk.core.api.ErrorCode;
 
 public enum RunnerErrorCode implements ErrorCode {
+    DISCONNECTED("runner.disconnected", 502),
+    POOL_FULL("runner.poolFull", 429),
     UNAVAILABLE("runner.unavailable", 502),
     LIMIT("runner.requestTooLarge", 413),
     INVALID_CAPABILITY("runner.invalidCapability", 401),

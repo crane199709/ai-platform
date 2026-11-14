@@ -15,7 +15,7 @@ class PlatformSnapshotContractTest {
     @Test
     void aiManifestUsesItsOwnPermissionsAndSubApp() throws Exception {
         var manifest = ResourceManifestCollector.collect(
-                "ai-service", "6", "io.saasforge.ai", getClass().getClassLoader());
+                "ai-service", "8", "io.saasforge.ai", getClass().getClassLoader());
         Files.writeString(
                 Path.of("target/resource-manifest.json"),
                 JsonMapper.builder().build().writeValueAsString(manifest));
@@ -23,6 +23,10 @@ class PlatformSnapshotContractTest {
         assertThat(manifest.permissions())
                 .extracting(permission -> permission.code())
                 .containsExactlyInAnyOrder(
+                        "ai:mcp:read",
+                        "ai:mcp:update",
+                        "ai:mcp:publish",
+                        "ai:mcp:rollback",
                         "ai:configuration:manage",
                         "ai:conversation:use",
                         "ai:skill:read",
@@ -38,10 +42,14 @@ class PlatformSnapshotContractTest {
             assertThat(menu.path()).isEqualTo("home");
         });
         assertThat(manifest.roles()).extracting(role -> role.code()).containsExactly("ai-user", "ai-admin");
-        assertThat(manifest.roles().get(0).permissions()).containsExactly("ai:conversation:use");
+        assertThat(manifest.roles().get(0).permissions()).containsExactly("ai:conversation:use", "ai:mcp:read");
         assertThat(manifest.roles().get(1).permissions())
                 .containsExactlyInAnyOrder(
                         "ai:conversation:use",
+                        "ai:mcp:read",
+                        "ai:mcp:update",
+                        "ai:mcp:publish",
+                        "ai:mcp:rollback",
                         "ai:configuration:manage",
                         "ai:skill:read",
                         "ai:skill:update",

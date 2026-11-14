@@ -5,6 +5,7 @@ import io.saasforge.ai.mcp.model.McpToolResultResponse;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
 import io.saasforge.sdk.audit.AuditLog;
 import io.saasforge.sdk.core.api.ForgeException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,8 +33,9 @@ public class McpToolProxyService {
     }
 
     @AuditLog(action = "ai.tool.call", resourceType = "mcpTool", resourceId = "#request.name()")
-    public McpToolResultResponse call(
-            McpToolCallRequest request, RunnerCapabilityService.GrantedContext context, String token) {
+    public McpToolResultResponse call(McpToolCallRequest request, HttpServletRequest servlet) {
+        var context = RunnerCapabilityService.requestContext(servlet);
+        String token = servlet.getHeader("Authorization").substring(7);
         var tool = selection.resolve(request.name());
         approvals.await(token, context, tool);
         Runnable authorize = () -> {

@@ -4,13 +4,36 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Prompt 模板与版本表：模板、版本、内容、变量、状态、发布人/时间
-- [ ] 草稿保存、发布、历史、回滚；发布写审计
-- [ ] 平台预置 + 租户自定义；租户只能管理自己的 Prompt
-- [ ] 会话启动时按助手/租户选择已发布版本，注入 runner
-- [ ] 变量校验与预览，非法变量保存失败
-- [ ] 测试覆盖：草稿/发布/回滚、变量校验、权限、跨租户隔离、注入内容正确
+- [x] Prompt 模板与版本表：模板、版本、内容、变量、状态、发布人/时间
+- [x] 草稿保存、发布、历史、回滚；发布写审计
+- [x] 平台预置 + 租户自定义；租户只能管理自己的 Prompt
+- [x] 会话启动接缝按租户选择已发布版本并渲染；实际 Runner 注入由工单 04 消费接通
+- [x] 变量校验与预览，非法变量保存失败
+- [x] 测试覆盖：草稿/发布/回滚、变量校验、权限、跨租户隔离、注入内容正确
 
 ## Comments
+
+## Answer
+
+本轮按执行范围交付后端 Prompt 管理和会话启动公开接缝，管理页面由工单 05 接入，实际 Runner 注入由工单 04 完成；不将 HTTP 渲染验收记为 Runner 联调完成。
+
+- V7 迁移建立租户草稿、不可变发布版本和独立的平台预置表，全部带标准列与中文注释；租户表启用强制 RLS。草稿保存、发布、回滚锁定同一模板行。回滚只切换发布指针，不改草稿或旧版本。
+- 平台默认模板由迁移发布为 v1，租户可以读取/使用，不能修改、发布或回滚平台预置。租户自定义模板受 SDK 租户隔离。
+- 新增 read/manage/publish/rollback 四项权限，ai-admin 角色包含这些权限。只有 use 权限的普通成员可读取发布选择项，不能读取草稿；草稿管理员仍没有发布/回滚权限。Manifest 版本为 4。
+- 变量声明与占位符集合必须一致，拒绝非法名称、未闭合、重复声明、缺失/多余渲染值；预览无写入，变量值只做一次字面替换。含正文/变量值的模型覆写安全 toString。
+- 发布/回滚使用真实 AuditLog → Outbox → RocketMQ → IAM 链路，只记录模板 ID、租户、操作人等元数据，detail 为 {}，不写名称、正文、变量值或密钥。
+- 公开接口为 `prompt.service.PromptService.resolvePublished(UUID, Integer, Map<String,String>)`，返回 `ResolvedPromptResponse(templateId, version, content)`；templateId 为 null 时选默认预置，version 为 null 时选当前发布版本。HTTP 管理、预览、默认渲染、只含元数据的发布选择列表见 [Prompt 管理契约](../../../docs/prompt-management.md)。
+
+### 验证与证据
+
+TDD 在已确认的 Java HTTP / PostgreSQL / 真实 IAM 权限与审计接缝进行。四个垂直切片分别观察到草稿接口 404、版本渲染接口 404、非法模板错误地返回 201、默认模板路径未实现返回 400 的红灯，然后补实现并观察绿灯。
+
+- Prompt 自身阶段：完整 PlatformIntegrationIT **9/9 通过**，含原有平台契约和五个 Prompt 场景；日志 `/private/tmp/ai-prompt-green4.log`。
+- 合入模型目录 2fbac4b 后：`AI_MAVEN_OFFLINE=true MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh service` **通过**，9 个常规测试、架构/注释/格式/权限目录门禁通过；日志 `/private/tmp/ai-prompt-verify-after-merge.log`。
+- 合并后完整真实平台：12 个场景中 **11 通过、1 错误**；全部 Prompt 场景通过，唯一错误是原有模型平台审计等待 60 秒仍为空。日志 `/private/tmp/ai-prompt-platform-after-merge.log`，环境日志与测试摘要保留在 `/private/tmp/ai-prompt-audit-timeout-evidence/`。
+- 相同代码、相同 60 秒断言复验：初始化阶段 RocketMQ 消费者报 `forge-tenant` 无 topic route（40402，三次获取失败），尚未进入业务场景。日志 `/private/tmp/ai-prompt-platform-after-merge-retry.log`，环境日志与摘要保留在 `/private/tmp/ai-prompt-topic-route-evidence/`。未放宽、跳过或 mock 权限与审计断言；组合验收需 fresh merger 在独立环境复验。
+- topic 准备与启动逻辑位于 `PlatformEnvironment`：broker clusterList 启动门禁、Proxy 端口监听门禁、updateTopic/topicRoute 循环。上述 Maven 日志保留了消费者启动异常；既有夹具没有记录 mqadmin 命令的完整 stdout/stderr，后续 readiness 排查应补有边界的证据。
+- 已合入最新集成基线 90431a6；其相对 2fbac4b 仅涉及 Runner/pnpm/文档，没有 Java 变更。按集成协调要求不因该合并重复无关 Runner 测试。
+- 本轮使用本机缓存 SDK 离线验证，没有重跑排除本机 Forge 缓存的已发布 SDK 下载验收。

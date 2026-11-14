@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.crypto.Mac;
@@ -711,6 +712,297 @@ class PlatformIntegrationIT {
                 .array());
         int offset = hash[hash.length - 1] & 15;
         return "%06d".formatted((ByteBuffer.wrap(hash, offset, 4).getInt() & 0x7fffffff) % 1_000_000);
+    }
+
+    @Test
+    void tenantCanSaveAndRetrievePromptDraft() {
+        var created = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts",
+                tokenA,
+                Map.of("name", "报告助手", "content", "请为 {{name}} 编写报告。", "variables", List.of("name")),
+                201);
+        String id = created.path("data").path("id").asText();
+        var found = call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenA, null, 200)
+                .path("data");
+        assertThat(found.path("content").asText()).isEqualTo("请为 {{name}} 编写报告。");
+        assertThat(found.path("variables").get(0).asText()).isEqualTo("name");
+        assertThat(found.path("publishedVersion").isNull()).isTrue();
+    }
+
+    @Test
+    void publishedPromptSnapshotsSurviveDraftEditsAndRollback() {
+        String id = createPrompt("第一版 {{name}}");
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/" + id + "/render",
+                tokenA,
+                Map.of("variables", Map.of("name", "小明")),
+                409);
+        var first = call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenA, Map.of(), 200)
+                .path("data");
+        assertThat(first.path("version").asInt()).isEqualTo(1);
+        assertThat(first.path("publishedBy").asText()).isEqualTo(IDENTITY);
+        assertThat(first.path("publishedAt").asText()).isNotBlank();
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/prompts/" + id + "/draft",
+                tokenA,
+                Map.of("name", "报告助手", "content", "第二版 {{name}}", "variables", List.of("name")),
+                200);
+        assertThat(renderPrompt(id, null)).isEqualTo("第一版 小明");
+        var second = call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenA, Map.of(), 200)
+                .path("data");
+        assertThat(second.path("version").asInt()).isEqualTo(2);
+        assertThat(renderPrompt(id, null)).isEqualTo("第二版 小明");
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/versions/1/rollback", tokenA, Map.of(), 200);
+        assertThat(renderPrompt(id, null)).isEqualTo("第一版 小明");
+        assertThat(renderPrompt(id, 2)).isEqualTo("第二版 小明");
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id + "/versions", tokenA, null, 200)
+                        .path("data"))
+                .hasSize(2);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("content")
+                        .asText())
+                .isEqualTo("第二版 {{name}}");
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var events = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/iam/audit/events?action=ai.prompt.publish&resourceId=" + id,
+                            tokenA,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(events).hasSize(2);
+            assertThat(events.get(0).path("actorId").asText()).isEqualTo(IDENTITY);
+            assertThat(events.get(0).path("outcome").asText()).isEqualTo("success");
+            assertThat(events.get(0).path("detail").toString()).isEqualTo("{}");
+            var rollback = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/iam/audit/events?action=ai.prompt.rollback&resourceId=" + id,
+                            tokenA,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(rollback).hasSize(1);
+            assertThat(rollback.get(0).path("detail").toString()).isEqualTo("{}");
+        });
+    }
+
+    @Test
+    void promptVariablesAreValidatedAndPreviewUsesLiteralSinglePassReplacement() {
+        var invalid = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts",
+                tokenA,
+                Map.of("name", "非法变量", "content", "你好 {{missing}}", "variables", List.of("name")),
+                400);
+        assertThat(invalid.path("code").asText()).isEqualTo("prompt.invalidVariables");
+        for (String content : List.of("你好 {{name", "你好 {{bad-name}}", "你好 {{name}} {{other}}")) {
+            call(
+                    platform.gateway(),
+                    HttpMethod.POST,
+                    "/ai/prompts",
+                    tokenA,
+                    Map.of("name", "非法变量", "content", content, "variables", List.of("name")),
+                    400);
+        }
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts",
+                tokenA,
+                Map.of("name", "重复变量", "content", "{{name}}", "variables", List.of("name", "name")),
+                400);
+        var preview = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/preview",
+                tokenA,
+                Map.of(
+                        "content",
+                        "你好 {{name}}，{{name}}",
+                        "variables",
+                        List.of("name"),
+                        "values",
+                        Map.of("name", "$1 {{name}}")),
+                200);
+        assertThat(preview.path("data").path("content").asText()).isEqualTo("你好 $1 {{name}}，$1 {{name}}");
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/preview",
+                tokenA,
+                Map.of("content", "{{name}}", "variables", List.of("name"), "values", Map.of()),
+                400);
+        var literal = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/preview",
+                tokenA,
+                Map.of(
+                        "content",
+                        "{{name}} {{other}}",
+                        "variables",
+                        List.of("name", "other"),
+                        "values",
+                        Map.of("name", "{{other}}", "other", "已替换")),
+                200);
+        assertThat(literal.path("data").path("content").asText()).isEqualTo("{{other}} 已替换");
+        String id = createPrompt("你好 {{name}}");
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/prompts/" + id + "/draft",
+                tokenA,
+                Map.of("name", "错误草稿", "content", "{{missing}}", "variables", List.of("name")),
+                400);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("content")
+                        .asText())
+                .isEqualTo("你好 {{name}}");
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenA, Map.of(), 200);
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/" + id + "/render",
+                tokenA,
+                Map.of("variables", Map.of()),
+                400);
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/" + id + "/render",
+                tokenA,
+                Map.of("variables", Map.of("name", "小明", "unknown", "不应注入")),
+                400);
+    }
+
+    @Test
+    void platformPresetIsPublishedReadOnlyAndAvailableBesideTenantPublishedPrompts() {
+        var selected = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/prompts/default/render",
+                        tokenA,
+                        Map.of("variables", Map.of()),
+                        200)
+                .path("data");
+        String id = selected.path("templateId").asText();
+        assertThat(selected.path("version").asInt()).isEqualTo(1);
+        assertThat(selected.path("content").asText()).isEqualTo("你是一名面向租户内部成员的 AI 助手。请准确回答，无法确认的信息应说明。");
+        var preset = call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenA, null, 200)
+                .path("data");
+        assertThat(preset.path("source").asText()).isEqualTo("PLATFORM");
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenB, null, 200);
+        var immutable = call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/prompts/" + id + "/draft",
+                tokenA,
+                Map.of("name", "不能改预置", "content", "任意内容", "variables", List.of()),
+                403);
+        assertThat(immutable.path("code").asText()).isEqualTo("prompt.readOnly");
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenA, Map.of(), 403);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/versions/1/rollback", tokenA, Map.of(), 403);
+        String draft = createPrompt("未发布草稿 {{name}}");
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/published", readOnlyMember, null, 200);
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + draft, readOnlyMember, null, 403);
+        var options = call(platform.gateway(), HttpMethod.GET, "/ai/prompts/published", tokenA, null, 200)
+                .path("data");
+        assertThat(options.toString()).contains(id).doesNotContain(draft, "content", "未发布草稿 {{name}}");
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + draft + "/publish", tokenA, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts/published", tokenA, null, 200)
+                        .path("data")
+                        .toString())
+                .contains(draft);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts/published", tokenB, null, 200)
+                        .path("data")
+                        .toString())
+                .doesNotContain(draft);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/prompts", tokenA, null, 200)
+                        .path("data")
+                        .toString())
+                .contains(draft, id);
+    }
+
+    @Test
+    void promptManagementPermissionsAreIndependentAndTenantDataStaysIsolated() throws Exception {
+        String editor = login(false, UUID.fromString("019a2525-0700-7000-8000-000000000031"), "ai-prompt-editor");
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/prompts",
+                        editor,
+                        Map.of("name", "编辑者草稿", "content", "发布内容 {{name}}", "variables", List.of("name")),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, editor, null, 200);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", editor, Map.of(), 403);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenA, Map.of(), 200);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/versions/1/rollback", editor, Map.of(), 403);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/prompts/" + id + "/draft",
+                editor,
+                Map.of("name", "编辑者草稿", "content", "仍未发布 {{name}}", "variables", List.of("name")),
+                200);
+        assertThat(renderPrompt(id, null)).isEqualTo("发布内容 小明");
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenWithoutPermission, null, 403);
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenB, null, 404);
+        call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id + "/versions", tokenB, null, 404);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/publish", tokenB, Map.of(), 404);
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/prompts/" + id + "/render",
+                tokenB,
+                Map.of("variables", Map.of("name", "小明")),
+                404);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/prompts/" + id + "/draft",
+                tokenB,
+                Map.of("name", "跨租户", "content", "跨租户 {{name}}", "variables", List.of("name")),
+                404);
+        assertThat(renderPrompt(id, null)).isEqualTo("发布内容 小明");
+    }
+
+    private String createPrompt(String content) {
+        return call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/prompts",
+                        tokenA,
+                        Map.of("name", "报告助手", "content", content, "variables", List.of("name")),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+    }
+
+    private String renderPrompt(String id, Integer version) {
+        var body = new HashMap<String, Object>();
+        body.put("variables", Map.of("name", "小明"));
+        if (version != null) {
+            body.put("version", version);
+        }
+        return call(platform.gateway(), HttpMethod.POST, "/ai/prompts/" + id + "/render", tokenA, body, 200)
+                .path("data")
+                .path("content")
+                .asText();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.saasforge.ai.prompt.mapper.PromptPresetMapper">
+    <select id="findById" resultType="io.saasforge.ai.prompt.entity.PlatformPromptPreset">
+        SELECT id, name, content, variable_names, version, published_at, created_at, updated_at, created_by, updated_by, deleted
+        FROM platform_prompt_preset
+        WHERE id = #{id} AND NOT deleted
+    </select>
+    <select id="findAll" resultType="io.saasforge.ai.prompt.entity.PlatformPromptPreset">
+        SELECT id, name, content, variable_names, version, published_at, created_at, updated_at, created_by, updated_by, deleted
+        FROM platform_prompt_preset
+        WHERE NOT deleted
+        ORDER BY name, id
+    </select>
+</mapper>

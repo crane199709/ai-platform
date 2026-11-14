@@ -23,6 +23,22 @@
     "ai:skill:rollback": {
       "name": "回滚 Skill 配置",
       "group": "AI 工作台"
+    },
+    "ai:prompt:read": {
+      "name": "读取 Prompt",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:manage": {
+      "name": "管理 Prompt 草稿",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:publish": {
+      "name": "发布 Prompt",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:rollback": {
+      "name": "回滚 Prompt",
+      "group": "AI 工作台"
     }
   },
   "menus": [
@@ -50,7 +66,11 @@
         "ai:skill:read",
         "ai:skill:update",
         "ai:skill:publish",
-        "ai:skill:rollback"
+        "ai:skill:rollback",
+        "ai:prompt:read",
+        "ai:prompt:manage",
+        "ai:prompt:publish",
+        "ai:prompt:rollback"
       ]
     }
   ]

@@ -15,7 +15,7 @@ class PlatformSnapshotContractTest {
     @Test
     void aiManifestUsesItsOwnPermissionsAndSubApp() throws Exception {
         var manifest = ResourceManifestCollector.collect(
-                "ai-service", "3", "io.saasforge.ai", getClass().getClassLoader());
+                "ai-service", "5", "io.saasforge.ai", getClass().getClassLoader());
         Files.writeString(
                 Path.of("target/resource-manifest.json"),
                 JsonMapper.builder().build().writeValueAsString(manifest));
@@ -27,7 +27,11 @@ class PlatformSnapshotContractTest {
                         "ai:skill:read",
                         "ai:skill:update",
                         "ai:skill:publish",
-                        "ai:skill:rollback");
+                        "ai:skill:rollback",
+                        "ai:prompt:read",
+                        "ai:prompt:manage",
+                        "ai:prompt:publish",
+                        "ai:prompt:rollback");
         assertThat(manifest.menus()).singleElement().satisfies(menu -> {
             assertThat(menu.app()).isEqualTo("ai");
             assertThat(menu.path()).isEqualTo("home");
@@ -41,7 +45,11 @@ class PlatformSnapshotContractTest {
                         "ai:skill:read",
                         "ai:skill:update",
                         "ai:skill:publish",
-                        "ai:skill:rollback");
+                        "ai:skill:rollback",
+                        "ai:prompt:read",
+                        "ai:prompt:manage",
+                        "ai:prompt:publish",
+                        "ai:prompt:rollback");
     }
 
     @Test

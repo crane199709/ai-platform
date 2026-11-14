@@ -38,7 +38,7 @@ docker build --platform "$platform" --metadata-file "$image_evidence/ai-service.
 pnpm --filter @ai-platform/runner build
 rm -rf "$root/runner/target/image"
 # 宿主可以是macOS；可选native包必须按最终Linux/musl目标解析，而不是复制Darwin依赖。
-pnpm --filter @ai-platform/runner deploy --legacy --prod --os linux --cpu "$runner_arch" --libc musl "$root/runner/target/image"
+pnpm --filter @ai-platform/runner deploy "$root/runner/target/image" --legacy --prod --os linux --cpu "$runner_arch" --libc musl
 # deploy --prod可能裁剪工作区开发依赖；恢复正常开发工作区，不影响已隔离的生产包。
 pnpm install --frozen-lockfile
 docker build --platform "$platform" --metadata-file "$image_evidence/runner.json" -f deploy/runner.Dockerfile --build-arg "VERSION=$AI_IMAGE_TAG" --build-arg "REVISION=$revision" -t "$registry/runner:$AI_IMAGE_TAG" .

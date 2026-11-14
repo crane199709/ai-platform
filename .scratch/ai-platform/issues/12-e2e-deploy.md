@@ -25,3 +25,7 @@
 准确构建源码`922b7101936d0d20047ff2b52bee588b4e1e4306`产生Linux/arm64 Java与Runner本地镜像；663个生产依赖锁条目与根锁一致。Runner镜像实际完成固定DSH初始化、两段流式回合和导出，验证UID1000、只读根目录、drop ALL、1CPU/384MiB、FD128、CPU120秒与V8堆限制；native缓存按既有emptyDir行为允许动态库映射，未扩大模型工具或产品授权。OCI index/平台manifest/config摘要和本地image ID在验收记录及外部产物目录分别保存。
 
 Kustomize渲染9个对象和YAML/脚本检查通过；未apply任何集群、未验证目标CNI/Nacos/生产容量或N-1环境回滚，未push、发布镜像或执行远端Actions。完整CI固定可检出的40位平台SHA构建私有分发，补齐公开依赖后离线执行项目→平台→真实Shell→镜像→真实DSH门禁，不能以本地结果冒充发布SDK或远端CI验收。
+
+### 2026-11-14 正式审查修复补充
+
+本轮全部产品修正提交92de69ab88f6e33bf1ebef2e12d1793d747fe457，新私有SaaS源码dc51a9a6998e241767df0c4bba68f8dc14009c70；完整49、真实Shell JUnit2/Playwright2、新Linux/arm64两镜像与实际DSH/资源契约通过。新tag按本轮完整SHA，旧922镜像仅保留为历史证据；八张本轮PNG逐张走查。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

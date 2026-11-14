@@ -30,7 +30,7 @@ AI_E2E_OUTPUT=/tmp/ai-fullstack \
 
 `.github/workflows/fullstack.yml`提供手动与可复用的**完整发布门禁**：输入准确40位`forge_ref`，从`crane199709/saas-forge`检出同一源码，构建完整配套SDK/运行包到任务私有Maven目录，用`-nsu`补齐AI公开依赖后离线固定该分发，再串行运行all→platform→真实Shell→本地镜像构建，不push。此运行分发前提独立于常规“发布SDK消费”门禁；平台应用jar并非公开Maven SDK制品。镜像构建的BuildKit元数据（含manifest digest）保存到`target/images/*.json`，随验收产物上传；本地image ID与manifest digest分别记录。
 
-本次本地平台基线`d7a27a63d6d3a52a724f85bc5a0d5f1a825bcbd5`尚未push，后端与`0647e0f1e1539f4882ee430a95d09f32f5ef909b`一致；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。
+本次本地平台基线`dc51a9a6998e241767df0c4bba68f8dc14009c70`尚未push，包含审查后的具体AI用量错误提示；私有运行分发由此确切提交干净重建；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。
 
 ## 镜像与部署检查
 

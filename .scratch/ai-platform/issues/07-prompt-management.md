@@ -55,3 +55,7 @@ TDD 在已确认的 Java HTTP / PostgreSQL / 真实 IAM 权限与审计接缝进
 - `AI_MAVEN_OFFLINE=true AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh platform`：**15/15 通过，0 跳过**，包含 Model Platform 审计、Prompt Tenant 发布/回滚、Skill 两个 Realm 的审计以及独立 update/publish/rollback 权限。日志 `/private/tmp/ai-prompt-skill-platform-direct512.log`；制品校验摘要、平台与 Broker 日志 `/private/tmp/ai-prompt-skill-direct512-evidence/`。采样中没有 OOM、POP message error 或 Proxy timeout。
 - `AI_MAVEN_OFFLINE=true MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh service`：**9/9 通过**，架构、迁移/SDK 注释、格式、权限目录门禁通过；日志 `/private/tmp/ai-prompt-skill-service-final.log`。`git diff --check` 通过。
 - 已移除临时 IAM PID/退出方式探针。历史 `forge-tenant` 40402 启动错误未在本次最小、二方法与联合复验中重现，未据此增改 readiness；本轮未执行排除本机缓存的已发布 SDK 下载验收。
+
+### 2026-11-14 正式审查修复补充
+
+单Controller使用的RenderPromptRequest已内嵌，字段、校验与安全toString保持；共用UI操作反馈不改变Prompt请求。完整49项HTTP/权限回归与前端14/26通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

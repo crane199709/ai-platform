@@ -38,3 +38,7 @@
 - `git diff --check` 通过。无付费模型调用或真实外部密钥。Java 最高接缝使用 FakeAgentRuntime，外部 MCP 网络用 McpTransport 接缝；IAM授权、RLS与审计均真实，另有真实 Node DSH HTTP 契约验证，未声称生产外部 MCP 或未知业务行级数据系统已端到端验收。
 
 HTTP 请求/响应、稳定服务 DTO、工具与下游行级权限边界、部署环境和审批限制见 [MCP 契约](../../../docs/mcp-api.md)；Runner 消息刷新、工具关联和升级顺序见 [Runner 契约](../../../docs/runner-contract.md)。v1 能力与待批回合绑定签发 Java 实例，部署须单实例或精确会话路由；IAM 管理员须实际配置 `ai_mcp_tool` DataPolicy。管理页面由05完成，生产网络/cgroup与外部系统验收由12负责。
+
+### 2026-11-14 正式审查修复补充
+
+MCP常驻提示使用“AI工具的数据范围”“全部”“本人”；ApprovalDecision/Status请求record移入唯一Controller，JSON/校验与授权不变。前端14/26、真实平台49及真实Shell审批/隔离通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

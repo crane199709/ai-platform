@@ -102,4 +102,4 @@ DSH升级先更新固定版本与lockfile，在Runner HTTP契约中验证初始�
 
 两宽1440/1024覆盖登录→建会话→分批输出→刷新恢复→敏感只读工具等待批准/结果→A/B切租户→删除→无权限不可见；并检查实际HTTP用量与Platform投影、受保护/内网指标。产物默认`ai-service/target/fullstack`，可用`AI_E2E_OUTPUT=/tmp/ai-e2e`放仓库外；含截图、浏览器报告、平台SHA与日志，TLS私钥不应上传报告。已有mock视觉回归另测布局，不能替代该真实链路。
 
-当前跨仓运行基线是本地saas-forge `d7a27a63d6d3a52a724f85bc5a0d5f1a825bcbd5`（产品后端与`0647e0f1e1539f4882ee430a95d09f32f5ef909b`一致），尚未push。不得声称远端CI已验证此本地ref。完整CI入口需在该ref可检出后显式提供准确40位SHA；见[CI说明](ci.md)。本地Kustomize渲染和容器验证不等于已验证目标集群CNI、Nacos发布、实际出口或生产容量。
+当前跨仓运行基线是本地saas-forge `dc51a9a6998e241767df0c4bba68f8dc14009c70`（已含审查修正；私有运行包从该确切提交干净重建），尚未push。不得声称远端CI已验证此本地ref。完整CI入口需在该ref可检出后显式提供准确40位SHA；见[CI说明](ci.md)。本地Kustomize渲染和容器验证不等于已验证目标集群CNI、Nacos发布、实际出口或生产容量。

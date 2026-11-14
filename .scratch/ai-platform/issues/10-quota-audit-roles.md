@@ -56,3 +56,7 @@
 [用量契约](../../../docs/usage-api.md)、[部署说明](../../../deploy/README.md) 已明确bootstrap：同Plan重新分配不广播，现有套餐保留内容重新保存会广播；未分配历史租户须运营显式分配合适套餐，不由AI推断不限。未操作共享环境。
 
 11可直接使用 `UsageService.currentPlan(): Optional<UsagePlanSnapshot>`，无可信事件为empty，缺省身份字段为空、不改变quotaKnown；按planCode读取部署级留存策略，默认90天与tenant覆盖由11实现。自动重试必须提供每次运行的attempt命名空间。真实外部付费模型、共享Nacos/生产部署不在本次本地验收内；AI HTTP主链路使用已约定的确定性AgentRuntime，真实DSH升级契约由03/09独立覆盖。
+
+### 2026-11-14 正式审查修复补充
+
+修复DSH合成零usage被误当完整计量的问题；真实DSH每次模型响应均须完整合法，工具回合部分缺失保留估计并真实429。SaaS补具体中文错误提示，68/68通过并从dc51a9a6干净重建私有运行包；真实AI平台49/49与Shell附加计量通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

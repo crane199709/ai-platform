@@ -41,3 +41,7 @@
 1440×900、1024×768 共 22 张基线已逐张 view_image 走查并随代码提交：home 两张由占位首页更新为工作台，其余新增 permission/busy/chat/approval/prompts/prompt-editor/skills/mcp/models/usage 两档。走查修复了繁忙时误报无模型、窄屏弹窗操作可达性和 SDK 原始 SSE 入口。补充展示证据位于 `/private/tmp/ai-platform-05-qa/`。
 
 准确的剩余范围：11 启用当前禁用的检索与 Markdown/JSON 导出入口；09/10 正式合入后复核 MCP catalog/configuration/version/tools、审批 SSE/decision、可信 displayName/summary、quotaKnown=false 的 503 usage.planUnavailable 与配额错误；12 使用真实 Shell/IAM/Gateway/AI/Runner、MCP 与用量数据验收。这里的组件/浏览器 mock 验收不宣称上述跨组件集成已经通过。使用示例与接线清单见 [工作台交接](../../../docs/sub-app-workspace.md)。
+
+### 2026-11-14 正式审查修复补充
+
+Prompt/Skill/MCP三管理页共用小型操作反馈函数，领域请求与文案仍留在页面；MCP改用用户数据范围术语。Vue14/14、视觉26/26及两张变更MCP PNG逐张走查通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

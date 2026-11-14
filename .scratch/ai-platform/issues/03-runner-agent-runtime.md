@@ -46,3 +46,7 @@
 - 请求上限 1 MiB，恢复最多 1000 条、每条 content 128000 字符；AI 服务需要明确会话长度策略。中断未提交的 delta 不伪装为完整助手消息。
 - Node 堆限制不等于 RSS/cgroup 硬限制；本地 FD/CPU rlimit 和回合超时已实测，Linux/Kubernetes cgroup/网络隔离由工单 12 补充，未冒充已验证。
 - 工单 04/09 按契约实现模型代理 `/chat/completions` 和 Tool Proxy `/tools/call`；工单 07 将已渲染发布 Prompt 通过会话 instructions 传入；工单 08 使用文档列明的官方受控 Skill 物化接缝，避免误用不存在的 DSH_SKILLS_PATH。
+
+### 2026-11-14 正式审查修复补充
+
+逐次从原始提供方SSE确定完整计量；DSH合成零对象不作上报证据，显式合法零值保留。真实DSH 30/30、真实组合ZERO/MISSING/MIXED及新Linux镜像均已通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

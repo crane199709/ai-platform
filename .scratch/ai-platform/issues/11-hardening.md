@@ -45,3 +45,7 @@
 - 预算回归红灯：`/private/tmp/ai11-budget-red.log`；修复后恢复/审批目标 3/3：`/private/tmp/ai11-budget-green.log`。最终增量预算版以完整 48 项结果为准。此前 Skill 404 已定位为 TenantDeleted 测试夹具缺少平台发布版本，补齐合法 Skill/MCP 版本后完整回归通过。
 
 真实平台运行包来自私有隔离 Maven 仓库 `/private/tmp/ai-usage-forge-verify/m2`，平台后端提交 `0647e0f1e1539f4882ee430a95d09f32f5ef909b`（keeper `d7a27a63d6d3a52a724f85bc5a0d5f1a825bcbd5` 仅另含视觉验收变化）；本轮 `target/platform-it/*.sha256` 与 `/private/tmp/ai-usage-forge-verify/build-evidence.json` 一致。未改 SDK、未发布 snapshot。真实外部付费模型、生产 K8s/CNI、Shell 登录全链路属于工单 12；本工单用规格已确认的替换 AgentRuntime 与真实 DSH 独立契约接缝验收。整轮重放不承诺只读查询恰好执行一次，v1 保持单 AI/Runner 实例约束。
+
+### 2026-11-14 正式审查修复补充
+
+后台留存安全纳入超过三分钟的异常退出遗留active回合，会话锁内先结算账本再擦除正文/配置/恢复快照；有效活跃回合继续保护。真实IAM/DB红灯→三项针对性绿灯→完整49/49均通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

@@ -43,3 +43,7 @@
 - 联合 `bash scripts/check.sh platform`（离线、真实 Forge 运行制品、forkCount=1）：**15/15 通过，0 跳过**，含 Skill 目录发布/回滚、Tenant 启停/草稿/历史/跨租户隔离、未发布内容边界、Tenant 发布/回滚审计与 Platform 发布审计；Model 与 Prompt 审计同时通过。日志 `/private/tmp/ai-prompt-skill-platform-direct512.log`，平台与 MQ 证据 `/private/tmp/ai-prompt-skill-direct512-evidence/`，新采样未见 OOM/POP 错误/Proxy 超时。
 - 最终 service verify：**9/9 通过**，含架构、HTTP、迁移/SDK 注释、格式及权限目录门禁；日志 `/private/tmp/ai-prompt-skill-service-final.log`。Runner 与 `57f09d9` 的已验收内容一致，沿用上述 **19/19** 真实 DSH/物化回归结果；本轮没有改 Runner。`git diff --check` 通过。
 - 会话创建时持久化并传递正式 `SkillService.resolvePublished()` 快照的接入由工单 04 完成，管理页面由工单 05 接入。本轮使用本机缓存 Forge 制品，未重跑排除缓存的已发布 SDK 下载验收。
+
+### 2026-11-14 正式审查修复补充
+
+单Controller使用的SkillEnableRequest已内嵌并保留NotNull/Valid；共用UI反馈不泛化Skill服务。完整49项与前端14/26通过。 两轴原6项均关闭且新增0；准确提交、红绿日志、制品摘要与未验证边界见[当前验收记录](../acceptance.md)。

@@ -1,15 +1,15 @@
 # classpath:/config/application.yml 优先级高于主配置并与之合并：测试不依赖 Nacos，统一在这里关闭
 spring:
   datasource:
-    username: demo_app
-    password: demo_app
+    username: ai_app
+    password: ai_app
   flyway:
-    user: demo_migrator
-    password: demo_migrator
-    schemas: demo
-    default-schema: demo
+    user: ai_migrator
+    password: ai_migrator
+    schemas: ai
+    default-schema: ai
     placeholders:
-      serviceSchema: demo
+      serviceSchema: ai
   cloud:
     nacos:
       config:

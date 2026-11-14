@@ -1,0 +1,15 @@
+{
+  "code": "ai",
+  "name": "AI 工作台",
+  "version": "0.1.0",
+  "remoteEntries": {
+    "local": "http://localhost:5180/remoteEntry.js"
+  },
+  "sharedRequirements": {
+    "vue": "3.5.44",
+    "vue-router": "5.4.0",
+    "pinia": "4.1.0",
+    "vue-i18n": "11.4.16",
+    "element-plus": "2.14.7"
+  }
+}

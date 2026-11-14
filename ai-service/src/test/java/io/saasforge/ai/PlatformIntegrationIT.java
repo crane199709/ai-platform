@@ -1,0 +1,377 @@
+package io.saasforge.ai;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.saasforge.ai.contract.entity.ContractRecord;
+import io.saasforge.ai.contract.mapper.ContractMapper;
+import io.saasforge.sdk.audit.AuditLog;
+import io.saasforge.sdk.core.api.ApiResponse;
+import io.saasforge.sdk.core.api.ErrorCode;
+import io.saasforge.sdk.core.api.ForgeException;
+import io.saasforge.sdk.security.RequiresPermission;
+import java.io.ByteArrayOutputStream;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.http.HttpClient;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestComponent;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
+
+/** 真实 IAM 的登录、授权与审计；Probe 及其表只在本测试上下文存在。 */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(PlatformIntegrationIT.ProbeConfiguration.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class PlatformIntegrationIT {
+    static final UUID TENANT_A = UUID.fromString("019a2525-0000-7000-8000-000000000001");
+    static final UUID MEMBER_A = UUID.fromString("019a2525-0000-7000-8000-000000000031");
+    static final UUID MEMBER_B = UUID.fromString("019a2525-0000-7000-8000-000000000032");
+    static final String IDENTITY = "019a2525-0000-7000-8000-000000000011";
+    static final PlatformEnvironment platform = new PlatformEnvironment();
+    String tokenA;
+    String tokenB;
+    String operator;
+    String tokenWithoutPermission;
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", platform.postgres::getJdbcUrl);
+        registry.add("spring.flyway.locations", () -> "classpath:db/migration,classpath:platform/migration");
+        registry.add("spring.data.redis.host", platform.redis::getHost);
+        registry.add("spring.data.redis.port", () -> platform.redis.getMappedPort(6379));
+        registry.add("spring.data.redis.database", platform.redis::database);
+        registry.add("forge.security.issuer", platform::issuer);
+        registry.add("forge.security.jwk-set-uri", () -> platform.iam() + "/oauth2/jwks");
+        registry.add("forge.manifest.iam-uri", platform::iam);
+        registry.add("forge.manifest.token", () -> platform.aiToken);
+        registry.add("forge.manifest.enabled", () -> true);
+        registry.add("forge.ops.token", () -> PlatformEnvironment.OPS);
+        registry.add("forge.mq.enabled", () -> true);
+        registry.add("forge.mq.ssl", () -> false);
+        registry.add("forge.mq.endpoints", platform::mqEndpoints);
+        registry.add("forge.tenant.write-guard.enabled", () -> true);
+    }
+
+    @LocalServerPort
+    int port;
+
+    @BeforeAll
+    void connectPlatform() throws Exception {
+        Awaitility.await().atMost(Duration.ofSeconds(30)).untilAsserted(() -> {
+            var status = call(
+                    "http://127.0.0.1:" + port,
+                    HttpMethod.GET,
+                    "/internal/onboarding-status",
+                    PlatformEnvironment.OPS,
+                    null,
+                    200);
+            assertThat(status.path("data").path("phase").asText()).isEqualTo("REPORTED");
+        });
+        platform.postgres.script("postgres/platform/seed.sql");
+        platform.publishSeededTenantState();
+        platform.startGateway(port);
+        tokenA = login(false, MEMBER_A);
+        tokenB = login(false, MEMBER_B);
+        tokenWithoutPermission = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000033"));
+        operator = login(true, null);
+    }
+
+    @AfterAll
+    void stopPlatform() {
+        platform.close();
+    }
+
+    @Test
+    void gatewayAcceptsOnlyTenantTokenAndPreservesVerifiedContext() {
+        call(platform.gateway(), HttpMethod.GET, "/ai/context", null, null, 401);
+        call(platform.gateway(), HttpMethod.GET, "/ai/context", operator, null, 401);
+        var denied = call(platform.gateway(), HttpMethod.GET, "/ai/context", tokenWithoutPermission, null, 403);
+        assertThat(denied.path("code").asText()).isEqualTo("auth.forbidden");
+        var response = call(platform.gateway(), HttpMethod.GET, "/ai/context?tenantId=spoofed", tokenA, null, 200);
+        assertThat(response.path("data").path("tenantId").asText()).isEqualTo(TENANT_A.toString());
+        assertThat(response.path("data").path("identityId").asText()).isEqualTo(IDENTITY);
+        assertThat(response.path("data").path("membershipId").asText()).isEqualTo(MEMBER_A.toString());
+        call(platform.gateway(), HttpMethod.GET, "/ai/internal/onboarding-status", tokenA, null, 403);
+        call("http://127.0.0.1:" + port, HttpMethod.GET, "/internal/onboarding-status", platform.aiToken, null, 401);
+        var docs = call(platform.gateway(), HttpMethod.GET, "/ai/v3/api-docs", null, null, 200);
+        assertThat(docs.path("x-forge-service").asText()).isEqualTo("ai-service");
+        assertThat(docs.path("servers").toString()).contains("/ai");
+    }
+
+    @Test
+    void tenantRecordsRemainInvisibleAcrossTenantsAndAreAuditedInIam() {
+        var created = call(platform.gateway(), HttpMethod.POST, "/ai/contract/records", tokenA, Map.of(), 201);
+        String id = created.path("data").path("id").asText();
+        assertThat(created.path("data").path("createdBy").asText()).isEqualTo(IDENTITY);
+        assertThat(created.path("data").path("createdAt").asText()).isNotBlank();
+        call(platform.gateway(), HttpMethod.GET, "/ai/contract/records/" + id, tokenA, null, 200);
+        var hidden = call(platform.gateway(), HttpMethod.GET, "/ai/contract/records/" + id, tokenB, null, 404);
+        assertThat(hidden.path("code").asText()).isEqualTo("aicontract.notFound");
+        // 略过 MyBatis 租户拦截器，仍由运行账号的 RLS 保护。
+        call(platform.gateway(), HttpMethod.GET, "/ai/contract/rls/" + id, tokenB, null, 404);
+        call(platform.gateway(), HttpMethod.GET, "/ai/contract/rls/" + id, tokenA, null, 200);
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var audit = call(
+                    platform.gateway(),
+                    HttpMethod.GET,
+                    "/iam/audit/events?action=ai.contract.verify&resourceId=" + id,
+                    tokenA,
+                    null,
+                    200);
+            assertThat(audit.path("data")).hasSize(1);
+            var event = audit.path("data").get(0);
+            assertThat(event.path("service").asText()).isEqualTo("ai-service");
+            assertThat(event.path("actorId").asText()).isEqualTo(IDENTITY);
+            assertThat(event.path("outcome").asText()).isEqualTo("success");
+            assertThat(event.path("traceId").asText()).hasSize(32);
+            assertThat(event.path("detail").toString()).isEqualTo("{}");
+        });
+        var otherTenant = call(
+                platform.gateway(),
+                HttpMethod.GET,
+                "/iam/audit/events?action=ai.contract.verify&resourceId=" + id,
+                tokenB,
+                null,
+                200);
+        assertThat(otherTenant.path("data")).isEmpty();
+    }
+
+    @Test
+    void appRegistryRegistersAiAndIamReceivesTheEntry() throws Exception {
+        var payload = (ObjectNode)
+                JsonMapper.builder().build().readTree(Files.readString(Path.of("../deploy/app-registry.local.json")));
+        payload.putObject("remoteEntries").put("test", "http://127.0.0.1:5180/remoteEntry.js");
+        var registered = call(platform.gateway(), HttpMethod.POST, "/platform/sub-apps", operator, payload, 201);
+        assertThat(registered.path("data").path("code").asText()).isEqualTo("ai");
+        var apps = call(platform.gateway(), HttpMethod.GET, "/platform/sub-apps", operator, null, 200);
+        assertThat(apps.path("data").toString()).contains("remoteEntry.js", "\"ai\"");
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var access = call(platform.gateway(), HttpMethod.GET, "/iam/auth/access", tokenA, null, 200);
+            assertThat(access.path("data").path("subApps").toString()).contains("remoteEntry.js", "\"ai\"");
+        });
+    }
+
+    @Test
+    void iamServiceCredentialsRejectInvalidToken() {
+        call(platform.iam(), HttpMethod.GET, "/internal/services", "invalid-service-token", null, 401);
+        var services = call(platform.iam(), HttpMethod.GET, "/internal/services", platform.aiToken, null, 200);
+        assertThat(services.toString()).contains("ai-service");
+    }
+
+    private String login(boolean operatorRealm, UUID membership) throws Exception {
+        String prefix = operatorRealm ? "/platform" : "";
+        var cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
+        var client = RestClient.builder()
+                .baseUrl(platform.iam())
+                .requestFactory(new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+                        .cookieHandler(cookies)
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build()))
+                .build();
+        JsonNode login = client.post()
+                .uri(prefix + "/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("account", operatorRealm ? "ai-operator" : "ai-member", "password", "Demo-password-123!"))
+                .retrieve()
+                .body(JsonNode.class)
+                .path("data");
+        if (operatorRealm && login.path("nextStep").asText().equals("bind")) {
+            String uri = client.post()
+                    .uri("/platform/auth/login/bind/start")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of())
+                    .retrieve()
+                    .body(JsonNode.class)
+                    .path("data")
+                    .path("otpauthUri")
+                    .asText();
+            String secret = UriComponentsBuilder.fromUriString(uri)
+                    .build()
+                    .getQueryParams()
+                    .getFirst("secret");
+            client.post()
+                    .uri("/platform/auth/login/bind/confirm")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("code", totp(secret)))
+                    .retrieve()
+                    .toBodilessEntity();
+        } else {
+            assertThat(login.path("nextStep").asText()).isEqualTo("authorize");
+        }
+        String verifier = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+        String challenge = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(
+                        MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+        String location = client.get()
+                .uri(builder -> builder.path("/oauth2/authorize")
+                        .queryParam("response_type", "code")
+                        .queryParam("client_id", operatorRealm ? "platform-console" : "tenant-app")
+                        .queryParam("redirect_uri", operatorRealm ? "http://localhost:5173/" : "http://localhost:5174/")
+                        .queryParam("scope", operatorRealm ? "platform" : "tenant")
+                        .queryParam("state", "ai-it")
+                        .queryParam("code_challenge_method", "S256")
+                        .queryParam("code_challenge", challenge)
+                        .build())
+                .exchange((req, res) -> {
+                    assertThat(res.getStatusCode().value()).isEqualTo(302);
+                    return res.getHeaders().getLocation().toString();
+                });
+        String code = UriComponentsBuilder.fromUriString(location)
+                .build()
+                .getQueryParams()
+                .getFirst("code");
+        assertThat(code).isNotBlank();
+        var body = new HashMap<String, Object>(Map.of("code", code, "codeVerifier", verifier));
+        if (membership != null) {
+            body.put("membershipId", membership);
+        }
+        return client.post()
+                .uri(prefix + "/auth/exchange")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(JsonNode.class)
+                .path("data")
+                .path("accessToken")
+                .asText();
+    }
+
+    static JsonNode call(String base, HttpMethod method, String path, String token, Object body, int expectedStatus) {
+        var request = PlatformEnvironment.client(base).method(method).uri(path);
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        if (body != null) {
+            request.contentType(MediaType.APPLICATION_JSON).body(body);
+        }
+        return request.exchange((req, res) -> {
+            var result = res.bodyTo(JsonNode.class);
+            assertThat(res.getStatusCode().value())
+                    .as("%s %s: %s", method, path, result)
+                    .isEqualTo(expectedStatus);
+            return result;
+        });
+    }
+
+    private static String totp(String secret) throws Exception {
+        var decoded = new ByteArrayOutputStream();
+        int buffer = 0;
+        int bits = 0;
+        for (char character : secret.toCharArray()) {
+            buffer = (buffer << 5) | "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(character);
+            bits += 5;
+            if (bits >= 8) {
+                bits -= 8;
+                decoded.write((buffer >> bits) & 255);
+            }
+        }
+        var mac = Mac.getInstance("HmacSHA1");
+        mac.init(new SecretKeySpec(decoded.toByteArray(), "HmacSHA1"));
+        byte[] hash = mac.doFinal(ByteBuffer.allocate(8)
+                .putLong(Instant.now().getEpochSecond() / 30)
+                .array());
+        int offset = hash[hash.length - 1] & 15;
+        return "%06d".formatted((ByteBuffer.wrap(hash, offset, 4).getInt() & 0x7fffffff) % 1_000_000);
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class ProbeConfiguration {
+        @Bean
+        ProbeController probeController(ContractMapper mapper) {
+            return new ProbeController(mapper);
+        }
+    }
+
+    @RestController
+    @TestComponent
+    public static class ProbeController {
+        private final ContractMapper mapper;
+
+        ProbeController(ContractMapper mapper) {
+            this.mapper = mapper;
+        }
+
+        @PostMapping("/contract/records")
+        @ResponseStatus(HttpStatus.CREATED)
+        @RequiresPermission("ai:conversation:use")
+        @AuditLog(action = "ai.contract.verify", resourceType = "contract", resourceId = "#result.data().id()")
+        @Transactional
+        public ApiResponse<ProbeResponse> create() {
+            var row = new ContractRecord();
+            mapper.insert(row);
+            return ApiResponse.created(response(mapper.selectById(row.getId())));
+        }
+
+        @GetMapping("/contract/records/{id}")
+        @RequiresPermission("ai:conversation:use")
+        public ApiResponse<ProbeResponse> read(@PathVariable UUID id) {
+            return ApiResponse.ok(response(mapper.selectById(id)));
+        }
+
+        @GetMapping("/contract/rls/{id}")
+        @RequiresPermission("ai:conversation:use")
+        public ApiResponse<ProbeResponse> readWithRlsOnly(@PathVariable UUID id) {
+            return ApiResponse.ok(response(mapper.readWithRlsOnly(id)));
+        }
+
+        private ProbeResponse response(ContractRecord row) {
+            if (row == null) {
+                throw new ForgeException(ProbeError.NOT_FOUND);
+            }
+            return new ProbeResponse(row.getId(), row.getCreatedBy(), row.getCreatedAt());
+        }
+    }
+
+    public record ProbeResponse(UUID id, UUID createdBy, OffsetDateTime createdAt) {}
+
+    enum ProbeError implements ErrorCode {
+        NOT_FOUND;
+
+        public String code() {
+            return "aicontract.notFound";
+        }
+
+        public int httpStatus() {
+            return 404;
+        }
+    }
+}

@@ -1,5 +1,9 @@
 {
   "permissions": {
+    "ai:configuration:manage": {
+      "name": "管理 AI 配置",
+      "group": "AI 工作台"
+    },
     "ai:conversation:use": {
       "name": "使用 AI 助手",
       "group": "AI 工作台"
@@ -13,6 +17,14 @@
       "app": "ai",
       "path": "home",
       "permission": "ai:conversation:use"
+    }
+  ],
+  "roles": [
+    { "code": "ai-user", "name": "AI 使用者", "permissions": ["ai:conversation:use"] },
+    {
+      "code": "ai-admin",
+      "name": "AI 管理员",
+      "permissions": ["ai:conversation:use", "ai:configuration:manage"]
     }
   ]
 }

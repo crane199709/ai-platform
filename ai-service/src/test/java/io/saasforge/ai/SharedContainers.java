@@ -1,6 +1,7 @@
 package io.saasforge.ai;
 
 import java.io.IOException;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
@@ -37,7 +38,7 @@ final class SharedContainers {
                 "ON_ERROR_STOP=1",
                 "-f",
                 "/docker-entrypoint-initdb.d/01-init.sql");
-        return new Postgres(PostgresHolder.CONTAINER.getJdbcUrl().replace("/forge?", "/" + name + "?"));
+        return new Postgres(PostgresHolder.CONTAINER, name);
     }
 
     /** 为调用的测试类分配一个清空的 Redis 库。 */
@@ -62,9 +63,15 @@ final class SharedContainers {
     }
 
     // 访问方法与 Testcontainers 容器同名，测试类原有的属性注册与连接代码无需改动
-    record Postgres(String jdbcUrl) {
+    record Postgres(PostgreSQLContainer container, String database) {
         String getJdbcUrl() {
-            return jdbcUrl;
+            return container.getJdbcUrl().replace("/forge?", "/" + database + "?");
+        }
+
+        void script(String resource) {
+            String path = "/tmp/" + UUID.randomUUID() + ".sql";
+            container.copyFileToContainer(MountableFile.forClasspathResource(resource), path);
+            exec(container, "psql", "-U", "test", "-d", database, "-v", "ON_ERROR_STOP=1", "-f", path);
         }
     }
 

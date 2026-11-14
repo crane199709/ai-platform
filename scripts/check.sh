@@ -15,6 +15,12 @@ case "$component" in
     pnpm --filter @ai-platform/runner build
     pnpm --filter @ai-platform/runner test
     ;;
+  platform)
+    : "${AI_FORGE_RUNTIME_REPOSITORY:?设置为含 Forge IAM、Platform、Gateway 0.2.0-SNAPSHOT 运行 jar 的 Maven 仓库}"
+    flags=(-U)
+    if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
+    (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" test -Dtest=PlatformIntegrationIT)
+    ;;
   sub-app)
     pnpm --filter @forge/ai-sub-app format:check
     pnpm --filter @forge/ai-sub-app build
@@ -29,5 +35,5 @@ case "$component" in
     bash scripts/check.sh runner
     bash scripts/check.sh sub-app
     ;;
-  *) echo 'Usage: scripts/check.sh [all|service|runner|sub-app]' >&2; exit 1 ;;
+  *) echo 'Usage: scripts/check.sh [all|service|runner|sub-app|platform]' >&2; exit 1 ;;
 esac

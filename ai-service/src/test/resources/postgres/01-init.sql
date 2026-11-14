@@ -8,7 +8,7 @@ SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database()) \gexe
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS ltree SCHEMA extensions;
 
-\set service demo
-\set migrator_password demo_migrator
-\set app_password demo_app
+\set service ai
+\set migrator_password ai_migrator
+\set app_password ai_app
 \ir lib/provision-service.sql

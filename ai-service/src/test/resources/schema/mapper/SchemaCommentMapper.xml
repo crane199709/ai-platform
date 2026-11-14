@@ -32,4 +32,21 @@
         AND col_description(c.oid, a.attnum) IS NULL
         ORDER BY 1
     </select>
+    <select id="connectionIdentity" resultType="string">
+        SELECT current_user || ':' || current_schema()
+    </select>
+    <select id="migrationAccounts" resultType="string">
+        SELECT DISTINCT installed_by FROM flyway_schema_history WHERE success
+    </select>
+    <select id="unsafeServiceRoles" resultType="int">
+        SELECT count(*) FROM pg_roles
+        WHERE rolname IN ('ai_app', 'ai_migrator')
+        AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole)
+    </select>
+    <select id="runtimeOwnedObjects" resultType="int">
+        SELECT (SELECT count(*) FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner
+        WHERE r.rolname = current_user)
+        + (SELECT count(*) FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner
+        WHERE r.rolname = current_user)
+    </select>
 </mapper>

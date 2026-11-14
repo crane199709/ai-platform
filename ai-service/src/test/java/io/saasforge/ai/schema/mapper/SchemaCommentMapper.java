@@ -28,4 +28,16 @@ public interface SchemaCommentMapper {
      * @return 表名
      */
     List<String> selectTableNames();
+
+    /** 运行账号与当前 schema，不受 Data Policy 过滤。 */
+    String connectionIdentity();
+
+    /** 迁移历史中的执行账号，不受 Data Policy 过滤。 */
+    List<String> migrationAccounts();
+
+    /** 服务双账号中持有高权限的数量，不受 Data Policy 过滤。 */
+    int unsafeServiceRoles();
+
+    /** 运行账号拥有的表或 schema 数量，不受 Data Policy 过滤。 */
+    int runtimeOwnedObjects();
 }

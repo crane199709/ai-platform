@@ -42,6 +42,14 @@ class SchemaCommentTest {
     SchemaCommentMapper mapper;
 
     @Test
+    void aiUsesSeparateSchemaAndRestrictedMigrationAndRuntimeAccounts() {
+        assertThat(mapper.connectionIdentity()).isEqualTo("ai_app:ai");
+        assertThat(mapper.migrationAccounts()).containsExactly("ai_migrator");
+        assertThat(mapper.unsafeServiceRoles()).isZero();
+        assertThat(mapper.runtimeOwnedObjects()).isZero();
+    }
+
+    @Test
     void everyTableAndColumnHasComment() {
         assertThat(mapper.countTables()).isPositive();
         assertThat(mapper.selectUncommented()).isEmpty();

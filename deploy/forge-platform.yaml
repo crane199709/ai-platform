@@ -1,0 +1,9 @@
+# 合并到本环境的 forge-platform.yaml；保留已有的服务和 Ops Token 映射。
+forge:
+  platform:
+    ops:
+      tokens:
+        ai-service: ${AI_SERVICE_OPS_TOKEN}
+    provisioning:
+      services:
+        - ai-service

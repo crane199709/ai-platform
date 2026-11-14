@@ -1,0 +1,17 @@
+# 合并到本环境的 forge-gateway.yaml：追加路由与安全前缀，保留已有条目。
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 保留环境已有的 trusted-proxies；OpenAPI 外部地址依赖正确的可信代理配置。
+          routes:
+            - id: ai-service
+              uri: lb://ai-service
+              predicates: [Path=/ai/**]
+              filters: [StripPrefix=1]
+forge:
+  gateway:
+    services:
+      - prefix: /ai
+        realm: tenant

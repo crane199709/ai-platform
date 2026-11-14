@@ -4,7 +4,7 @@
 
 A tenant AI workbench built as an independent product on SaaS Forge. Java Business Service, Node Runner and Vue Sub-App use the platform contracts for tenants, permissions, plans, audit and app registration.
 
-This iteration delivers the repository and CI skeleton: Java builds and checks the published SDK, Runner exposes liveness, and the Sub-App renders an empty workbench. Conversations, streaming, DSH, models, Prompt, Skill, MCP and platform deployment belong to later issues.
+The repository includes the engineering skeleton and AI service integration: Forge SDKs, Manifest role templates, a tenant context API, and isolated acceptance with real IAM, Gateway, audit and App Registry. Runner exposes liveness and the Sub-App renders an empty workbench. Conversations, streaming, DSH, models, Prompt, Skill, MCP and full deployment belong to later issues.
 
 ## Projects
 
@@ -31,7 +31,7 @@ The complete check runs Java test containers, Runner HTTP tests and browser page
 
 ## Run the skeleton
 
-Prepare the [deployment prerequisites](deploy/README.md), copy ai-service/.env.example to ai-service/.env.local, fill in accounts and service credentials, load the variables inside ai-service, then run `./mvnw spring-boot:run`. The application does not load the env file automatically. Real IAM, Gateway and App Registry integration remains in issue 02.
+Prepare the [deployment prerequisites](deploy/README.md), copy ai-service/.env.example to ai-service/.env.local, fill in accounts and service credentials, load the variables inside ai-service, then run `./mvnw spring-boot:run`. The application does not load the env file automatically. For shared environments, follow the deployment guide to merge Gateway configuration and register the app. Run isolated platform acceptance with `AI_FORGE_RUNTIME_REPOSITORY=runtime-artifact-repository bash scripts/check.sh platform`; prerequisites are listed in that guide.
 
 ```bash
 # Runner: GET http://127.0.0.1:8181/health
@@ -44,6 +44,6 @@ Build Runner before start. The development host reuses platform login; browser t
 
 ## CI and specification
 
-CI checks Java, Node and Vue separately and verifies the published 0.2.0-SNAPSHOT daily with an isolated Forge cache. See [CI documentation](docs/ci.md) for the unified entry, credentials and screenshot boundaries. The workbench permission is ai:conversation:use and the Sub-App code is ai. The current Manifest declares an entry contract; conversation APIs are not implemented yet.
+CI checks Java, Node and Vue separately and verifies the published 0.2.0-SNAPSHOT daily with an isolated Forge cache. See [CI documentation](docs/ci.md) for the unified entry, credentials and screenshot boundaries. The workbench permission is ai:conversation:use and the Sub-App code is ai. The Manifest declares `ai-user` / `ai-admin` role templates and configuration management permission; `/ai/context` returns the verified tenant and membership context. Conversation APIs are not implemented yet.
 
 [Specification](.scratch/ai-platform/spec.md) · [Issues](.scratch/ai-platform/issues/) · [Glossary](docs/GLOSSARY.md) · [ADRs](docs/adr/)

@@ -4,7 +4,7 @@
 
 面向租户内部成员的 AI 工作台，作为独立产品接入 SaaS Forge。仓库包含 Java Business Service、Node Runner 和 Vue Sub-App，复用平台的租户、权限、套餐、审计和应用注册契约。
 
-当前交付仓库与 CI 骨架：Java 可构建并校验已发布 SDK，Runner 提供存活检查，Sub-App 显示工作台空状态。会话、聊天流、DSH、模型、Prompt、Skill、MCP 与实际平台部署由后续工单实现。
+当前交付工程骨架与 AI 服务平台接入：Java 接入 Forge SDK、Manifest 角色模板和租户上下文接口，并提供真实 IAM、网关、审计与 App Registry 的隔离验收。Runner 提供存活检查，Sub-App 显示工作台空状态；会话、聊天流、DSH、模型、Prompt、Skill、MCP 与完整部署由后续工单实现。
 
 ## 工程
 
@@ -31,7 +31,7 @@ bash scripts/check.sh
 
 ## 启动骨架
 
-Java 启动前先准备 [部署前提](deploy/README.md)，把 ai-service/.env.example 复制为 ai-service/.env.local，填写账号与服务凭证，再在 ai-service 目录加载变量并执行 `./mvnw spring-boot:run`。应用不会自动加载该环境文件。真实 IAM、网关和 App Registry 接入仍属于工单 02。
+Java 启动前先准备 [部署前提](deploy/README.md)，把 ai-service/.env.example 复制为 ai-service/.env.local，填写账号与服务凭证，再在 ai-service 目录加载变量并执行 `./mvnw spring-boot:run`。应用不会自动加载该环境文件。共享环境按部署文档合并网关配置并登记应用；真实平台隔离验收使用 `AI_FORGE_RUNTIME_REPOSITORY=运行制品仓库路径 bash scripts/check.sh platform`，前置条件见部署文档。
 
 ```bash
 # Runner：GET http://127.0.0.1:8181/health
@@ -44,6 +44,6 @@ Runner start 前先运行其 build。开发宿主复用平台登录；页面测�
 
 ## 持续集成与规格
 
-CI 分别检查 Java、Node、Vue，并每日以隔离 Forge 缓存验证已发布的 0.2.0-SNAPSHOT。统一检查入口、凭据和截图边界见 [CI 说明](docs/ci.md)。AI 工作台权限为 ai:conversation:use，Sub-App 编码 ai；当前 Manifest 只提供入口契约，没有可调用的会话 API。
+CI 分别检查 Java、Node、Vue，并每日以隔离 Forge 缓存验证已发布的 0.2.0-SNAPSHOT。统一检查入口、凭据和截图边界见 [CI 说明](docs/ci.md)。AI 工作台权限为 ai:conversation:use，Sub-App 编码 ai；Manifest 声明 `ai-user` / `ai-admin` 角色模板与配置管理权限；`/ai/context` 返回已验证的租户和成员上下文。会话 API 尚未实现。
 
 [产品规格](.scratch/ai-platform/spec.md) · [工单](.scratch/ai-platform/issues/) · [术语](docs/GLOSSARY.md) · [架构决策](docs/adr/)

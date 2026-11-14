@@ -35,3 +35,10 @@ forge:
 
 server:
   port: 0
+
+ai:
+  runner:
+    base-uri: http://127.0.0.1:1
+    service-token: test-runner-service-token
+  model-proxy:
+    secret-references: [CONVERSATION_TEST_KEY]

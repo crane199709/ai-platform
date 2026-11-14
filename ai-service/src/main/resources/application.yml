@@ -3,6 +3,9 @@ server:
   # 业务服务部署端口：平台运维
   port: ${FORGE_SERVICE_PORT}
 spring:
+  mvc:
+    async:
+      request-timeout: 130s
   application:
     name: ai-service
   config:
@@ -66,3 +69,10 @@ forge:
     token: ${forge.manifest.token}
 mybatis-plus:
   mapper-locations: classpath*:/*/mapper/**/*.xml
+
+ai:
+  runner:
+    base-uri: ${AI_RUNNER_BASE_URI}
+    service-token: ${AI_RUNNER_SERVICE_TOKEN}
+  model-proxy:
+    secret-references: ${AI_MODEL_SECRET_REFERENCES:}

@@ -24,6 +24,7 @@ case "$component" in
     (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" test -Dtest=PlatformIntegrationIT)
     ;;
   sub-app)
+    pnpm --filter @forge/ai-sub-app test
     pnpm --filter @forge/ai-sub-app format:check
     pnpm --filter @forge/ai-sub-app build
     if [[ "${CI:-false}" == true ]]; then

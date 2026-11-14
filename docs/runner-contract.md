@@ -73,7 +73,7 @@ node --max-old-space-size=256 --max-semi-space-size=8 <官方包>/lib/bin.js --p
 
 每租户独立进程、随机私有目录、DSH_HOME、HOME 和临时 workspace；目录 mode 0700、profile 文件 mode 0600。环境使用允许列表，不继承模型凭据、用户 home、NODE_OPTIONS 或代理变量。进程仅连接自己的 loopback 模型/MCP 桥，桥只访问配置好的 AI 服务。
 
-官方 profile 的 shell/FS、Web、plugin manager、子代理、调度、Office 和其他原生工具通过受支持 patch 禁用；真实契约断言 Provider 收到的工具清单为空或严格等于声明的只读 MCP 工具。DSH 客户端审批请求一律拒绝。每租户同模型/同工具/同 Prompt 配置复用进程；模型、工具或 Prompt 配置变化会重启该租户进程，下次请求从各会话 transcript 恢复。
+官方 profile 的 shell/FS、Web、plugin manager、子代理、调度、Office 和其他执行工具通过受支持 patch 禁用；Provider 工具清单严格限于声明的只读 MCP 工具，以及非空审核 Skill 快照启用的官方 `skill` 加载工具。DSH 客户端审批请求一律拒绝。每租户在模型、只读工具、Prompt 与 Skill 快照一致时复用进程；任一配置变化会重启该租户进程，下次请求从各会话 transcript 恢复。
 
 同租户最多一个活跃/正在准入回合；第二回合返回 409 `runner.tenantBusy`。取消通过终止该租户进程实现，因为 SDK 没有 prompt-cancel；先 SIGTERM，1 秒后仍未退出则 SIGKILL，处理整个进程组。该租户其他会话的运行期句柄失效，下次调用恢复上下文；其他租户不受影响。池满返回 429 `runner.poolFull`、`Retry-After: 5`，没有 Runner 内部持久排队；AI 服务负责有限重试。默认空闲 15 分钟回收进程、home、workspace 和内存缓存。
 

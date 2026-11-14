@@ -209,6 +209,14 @@ class PlatformIntegrationIT {
             var roles = call(platform.gateway(), HttpMethod.GET, "/iam/roles", login(false, USAGE_MEMBER), null, 200)
                     .path("data");
             assertThat(roles.toString()).contains("ai-user", "ai-admin");
+            var user = StreamSupport.stream(roles.spliterator(), false)
+                    .filter(r -> r.path("code").asText().equals("ai-user"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(StreamSupport.stream(user.path("permissions").spliterator(), false)
+                            .map(JsonNode::asText)
+                            .toList())
+                    .containsExactlyInAnyOrder("ai:conversation:use", "ai:mcp:read");
             var admin = StreamSupport.stream(roles.spliterator(), false)
                     .filter(r -> r.path("code").asText().equals("ai-admin"))
                     .findFirst()
@@ -466,7 +474,11 @@ class PlatformIntegrationIT {
                     .filter(r -> r.path("code").asText().equals("ai-admin"))
                     .findFirst()
                     .orElseThrow();
-            assertThat(user.path("permissions").toString()).isEqualTo("[\"ai:conversation:use\"]");
+            assertThat(StreamSupport.stream(user.path("permissions").spliterator(), false)
+                            .map(JsonNode::asText)
+                            .toList())
+                    .contains("ai:conversation:use")
+                    .isSubsetOf("ai:conversation:use", "ai:mcp:read");
             var declared = ResourceManifestCollector.collect(
                             "ai-service", "test", "io.saasforge.ai", getClass().getClassLoader())
                     .permissions()

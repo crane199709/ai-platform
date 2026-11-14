@@ -3,19 +3,27 @@ package io.saasforge.ai.conversation.service;
 import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
 import io.saasforge.ai.conversation.model.SendMessageRequest;
+import io.saasforge.ai.mcp.service.McpSelectionService;
+import io.saasforge.ai.mcp.service.McpToolApprovalService;
+import io.saasforge.ai.mcp.service.McpToolSnapshot;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
 import io.saasforge.ai.skill.service.SkillSnapshot;
 import io.saasforge.ai.usage.service.UsageService;
+import io.saasforge.sdk.audit.AuditCategory;
+import io.saasforge.sdk.audit.AuditEvent;
+import io.saasforge.sdk.audit.AuditRealm;
+import io.saasforge.sdk.audit.AuditRecorder;
 import io.saasforge.sdk.core.CurrentTenant;
+import io.saasforge.sdk.core.UuidV7;
 import io.saasforge.sdk.security.TenantContext;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +50,9 @@ public class ConversationStreamingService {
     private final AgentRuntime runtime;
     private final UsageService usage;
     private final RunnerCapabilityService capabilities;
+    private final McpSelectionService mcp;
+    private final AuditRecorder toolAudit;
+    private final McpToolApprovalService approvals;
     private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
     private final ExecutorService executor =
             new ThreadPoolExecutor(8, 8, 30, TimeUnit.SECONDS, new SynchronousQueue<>(), r -> {
@@ -63,8 +74,14 @@ public class ConversationStreamingService {
             AgentRuntime runtime,
             RunnerCapabilityService capabilities,
             ObjectProvider<Tracer> tracing,
-            UsageService usage) {
+            UsageService usage,
+            McpSelectionService mcp,
+            AuditRecorder toolAudit,
+            McpToolApprovalService approvals) {
         this.usage = usage;
+        this.approvals = approvals;
+        this.toolAudit = toolAudit;
+        this.mcp = mcp;
         this.tracer = tracing.getIfAvailable();
         this.turns = turns;
         this.conversations = conversations;
@@ -160,6 +177,8 @@ public class ConversationStreamingService {
         private final StringBuilder content = new StringBuilder();
         private final List<Map<String, Object>> tools = new ArrayList<>();
         private String token;
+        private List<McpToolSnapshot> authorizedToolSnapshots = List.of();
+        private final Map<String, UUID> pendingSkillCalls = new LinkedHashMap<>();
         private List<AgentRuntime.TranscriptMessage> committed = List.of();
         private final TraceContext traceContext =
                 tracer == null ? null : tracer.currentTraceContext().context();
@@ -206,11 +225,21 @@ public class ConversationStreamingService {
                 return;
             }
             try {
+                authorizedToolSnapshots = mcp.authorizeSnapshots(
+                        List.of(json.readValue(prepared.conversation().getMcpSnapshot(), McpToolSnapshot[].class)));
+                var scopes = new HashSet<String>();
+                scopes.add("model:chat");
+                authorizedToolSnapshots.forEach(tool -> scopes.add(tool.scope()));
                 token = capabilities.issue(
                         prepared.conversation().getId(),
                         prepared.turn().getId(),
                         prepared.turn().getModelId(),
-                        Set.of("model:chat"));
+                        scopes);
+                approvals.register(
+                        token,
+                        tenant.tenantId(),
+                        prepared.conversation().getId(),
+                        event -> context(() -> send(event.type(), event.data())));
                 if (cancelRequested.get()) {
                     finish("CANCELLED", null, null, false);
                     return;
@@ -239,7 +268,7 @@ public class ConversationStreamingService {
                         prepared.transcript(),
                         prepared.conversation().getInstructions(),
                         snapshots,
-                        List.of());
+                        McpSelectionService.runtimeTools(authorizedToolSnapshots));
                 runtime.run(new AgentRuntime.Run(session, prepared.text(), token), this::event);
                 if (!terminal.get()) {
                     finish(
@@ -256,6 +285,7 @@ public class ConversationStreamingService {
                         false);
             } finally {
                 capabilities.revoke(token);
+                approvals.close(prepared.turn().getId());
                 if (cancelRequested.get()) {
                     Thread.interrupted();
                 }
@@ -293,6 +323,48 @@ public class ConversationStreamingService {
                     }
                     if (data.has("isError")) {
                         summary.put("isError", data.path("isError").asBoolean());
+                    }
+                    String name = data.path("name").asText();
+                    String callId = data.path("callId").asText();
+                    if (!callId.isBlank() && callId.length() <= 256) {
+                        if (event.type().equals("tool.call")
+                                && name.equals("skill")
+                                && !json.readTree(prepared.conversation().getSkillSnapshot())
+                                        .isEmpty()
+                                && !pendingSkillCalls.containsKey(callId)) {
+                            UUID invocation = UuidV7.generate();
+                            pendingSkillCalls.put(callId, invocation);
+                            auditSkill("ai.tool.start", invocation, "started", null);
+                        } else if (event.type().equals("tool.result") && (name.equals("skill") || name.isBlank())) {
+                            UUID invocation = pendingSkillCalls.remove(callId);
+                            if (invocation != null) {
+                                auditSkill(
+                                        "ai.tool.call",
+                                        invocation,
+                                        "completed",
+                                        data.path("isError").asBoolean() ? "runner.toolFailure" : null);
+                            }
+                        }
+                    }
+
+                    for (var tool : authorizedToolSnapshots) {
+                        if (name.equals(tool.runtimeName()) || name.equals("mcp__ai_service__" + tool.runtimeName())) {
+                            summary.put("displayName", tool.nativeName());
+                            summary.put(
+                                    "summary",
+                                    event.type().equals("tool.call")
+                                            ? "正在执行只读查询"
+                                            : data.path("isError").asBoolean() ? "工具执行失败" : "只读查询已完成");
+                            break;
+                        }
+                    }
+                    if (name.equals("skill")) {
+                        summary.put("displayName", "技能");
+                        summary.put(
+                                "summary",
+                                event.type().equals("tool.call")
+                                        ? "正在调用已发布技能"
+                                        : data.path("isError").asBoolean() ? "技能调用失败" : "技能调用已完成");
                     }
                     tools.add(summary);
                     send("tool", summary);
@@ -336,11 +408,31 @@ public class ConversationStreamingService {
             finish("CANCELLED", null, null, false);
         }
 
+        private void auditSkill(String action, UUID invocation, String phase, String errorCode) {
+            var event = AuditEvent.builder(AuditRealm.TENANT, AuditCategory.OPERATION, action)
+                    .tenant(tenant.tenantId())
+                    .actor(tenant.identityId())
+                    .resource("skillToolCall", invocation)
+                    .detail("conversationId", prepared.conversation().getId())
+                    .detail("turnId", prepared.turn().getId())
+                    .detail("toolType", "skill")
+                    .detail("phase", phase);
+            if (errorCode != null) {
+                event.failure(errorCode);
+            }
+            toolAudit.record(event.build());
+        }
+
         synchronized void finish(String status, String code, JsonNode usage, boolean reported) {
             if (!terminal.compareAndSet(false, true)) {
                 return;
             }
             capabilities.revoke(token);
+            approvals.close(prepared.turn().getId());
+            for (UUID invocation : pendingSkillCalls.values()) {
+                auditSkill("ai.tool.call", invocation, "interrupted", "conversation.interrupted");
+            }
+            pendingSkillCalls.clear();
             try {
                 turns.finish(
                         prepared.conversation().getId(),

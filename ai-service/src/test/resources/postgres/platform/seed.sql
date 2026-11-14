@@ -96,3 +96,33 @@ INSERT INTO tenant(id,name,status,admin_contact,region) VALUES
 ('019a2525-0000-7000-8000-000000000002','AI 验收租户 B','active','ai-b@example.test','west'),
 ('019a2525-0000-7000-8000-000000000003','AI 无授权租户','active','ai-c@example.test','east'),
 ('019a2525-0010-7000-8000-000000000001','AI 用量验收租户','active','ai-usage@example.test','east');
+
+SET search_path = iam, extensions;
+-- MCP 管理与只读使用权限由真实 IAM 发布，未授权成员保持拒绝。
+INSERT INTO role_permission (role_id,permission_id)
+SELECT r.id,p.id FROM role r CROSS JOIN permission p
+WHERE r.code = 'ai-verification' AND p.code IN ('ai:mcp:read','ai:mcp:update','ai:mcp:publish','ai:mcp:rollback') AND NOT p.deleted;
+INSERT INTO role_permission (role_id,permission_id)
+SELECT r.id,p.id FROM role r CROSS JOIN permission p
+WHERE r.code = 'ai-readonly' AND p.code = 'ai:mcp:read' AND NOT p.deleted;
+
+INSERT INTO identity (id,account,email,display_name,password_hash) VALUES ('019a2525-0900-7000-8000-000000000011','ai-mcp-self','ai-mcp-self@example.test','MCP验收','$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
+INSERT INTO membership (id,identity_id,tenant_id) VALUES ('019a2525-0900-7000-8000-000000000031','019a2525-0900-7000-8000-000000000011','019a2525-0000-7000-8000-000000000001');
+INSERT INTO role (id,tenant_id,code,name,builtin) VALUES ('019a2525-0900-7000-8000-000000000041','019a2525-0000-7000-8000-000000000001','ai-mcp-self','MCP范围验收',false);
+INSERT INTO membership_role (membership_id,role_id) VALUES ('019a2525-0900-7000-8000-000000000031','019a2525-0900-7000-8000-000000000041');
+INSERT INTO role_permission(role_id,permission_id) SELECT '019a2525-0900-7000-8000-000000000041',id FROM permission WHERE code IN ('ai:conversation:use','ai:mcp:read','ai:mcp:update','ai:mcp:publish') AND NOT deleted;
+INSERT INTO role_data_policy(role_id,resource,scope) VALUES ('019a2525-0900-7000-8000-000000000041','ai_mcp_tool','self');
+
+INSERT INTO identity (id,account,email,display_name,password_hash) VALUES ('019a2525-0900-7000-8000-000000000012','ai-mcp-custom','ai-mcp-custom@example.test','MCP验收','$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
+INSERT INTO membership (id,identity_id,tenant_id) VALUES ('019a2525-0900-7000-8000-000000000032','019a2525-0900-7000-8000-000000000012','019a2525-0000-7000-8000-000000000001');
+INSERT INTO role (id,tenant_id,code,name,builtin) VALUES ('019a2525-0900-7000-8000-000000000042','019a2525-0000-7000-8000-000000000001','ai-mcp-custom','MCP范围验收',false);
+INSERT INTO membership_role (membership_id,role_id) VALUES ('019a2525-0900-7000-8000-000000000032','019a2525-0900-7000-8000-000000000042');
+INSERT INTO role_permission(role_id,permission_id) SELECT '019a2525-0900-7000-8000-000000000042',id FROM permission WHERE code IN ('ai:conversation:use','ai:mcp:read') AND NOT deleted;
+INSERT INTO role_data_policy(role_id,resource,scope,condition) VALUES ('019a2525-0900-7000-8000-000000000042','ai_mcp_tool','custom','{"op":"eq","attr":"resource.toolName","value":"lookup"}');
+
+INSERT INTO identity (id,account,email,display_name,password_hash) VALUES ('019a2525-0900-7000-8000-000000000013','ai-mcp-unscoped','ai-mcp-unscoped@example.test','MCP验收','$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
+INSERT INTO membership (id,identity_id,tenant_id) VALUES ('019a2525-0900-7000-8000-000000000033','019a2525-0900-7000-8000-000000000013','019a2525-0000-7000-8000-000000000001');
+INSERT INTO role (id,tenant_id,code,name,builtin) VALUES ('019a2525-0900-7000-8000-000000000043','019a2525-0000-7000-8000-000000000001','ai-mcp-unscoped','MCP范围验收',false);
+INSERT INTO membership_role (membership_id,role_id) VALUES ('019a2525-0900-7000-8000-000000000033','019a2525-0900-7000-8000-000000000043');
+INSERT INTO role_permission(role_id,permission_id) SELECT '019a2525-0900-7000-8000-000000000043',id FROM permission WHERE code IN ('ai:conversation:use','ai:mcp:read') AND NOT deleted;
+INSERT INTO role_data_policy(role_id,resource,scope) SELECT id,'ai_mcp_tool','all' FROM role WHERE code='ai-verification';

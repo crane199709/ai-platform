@@ -104,4 +104,14 @@ public class Conversation extends AuditableEntity {
     public String toString() {
         return "Conversation[redacted]";
     }
+
+    private String mcpSnapshot;
+
+    public String getMcpSnapshot() {
+        return mcpSnapshot;
+    }
+
+    public void setMcpSnapshot(String value) {
+        mcpSnapshot = value;
+    }
 }

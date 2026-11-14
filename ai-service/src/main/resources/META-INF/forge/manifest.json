@@ -39,6 +39,22 @@
     "ai:prompt:rollback": {
       "name": "回滚 Prompt",
       "group": "AI 工作台"
+    },
+    "ai:mcp:read": {
+      "name": "MCP read",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:update": {
+      "name": "MCP update",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:publish": {
+      "name": "MCP publish",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:rollback": {
+      "name": "MCP rollback",
+      "group": "AI 工作台"
     }
   },
   "menus": [
@@ -55,7 +71,10 @@
     {
       "code": "ai-user",
       "name": "AI 使用者",
-      "permissions": ["ai:conversation:use"]
+      "permissions": [
+        "ai:conversation:use",
+        "ai:mcp:read"
+      ]
     },
     {
       "code": "ai-admin",
@@ -70,7 +89,38 @@
         "ai:prompt:read",
         "ai:prompt:update",
         "ai:prompt:publish",
-        "ai:prompt:rollback"
+        "ai:prompt:rollback",
+        "ai:mcp:read",
+        "ai:mcp:update",
+        "ai:mcp:publish",
+        "ai:mcp:rollback"
+      ]
+    }
+  ],
+  "dataResources": [
+    {
+      "code": "ai_mcp_tool",
+      "name": "AI MCP 只读工具",
+      "table": "ai_mcp_tool_grant",
+      "attributes": [
+        {
+          "code": "ownerId",
+          "name": "发布成员",
+          "type": "uuid",
+          "column": "owner_id"
+        },
+        {
+          "code": "catalogId",
+          "name": "MCP目录",
+          "type": "uuid",
+          "column": "catalog_id"
+        },
+        {
+          "code": "toolName",
+          "name": "工具名称",
+          "type": "string",
+          "column": "tool_name"
+        }
       ]
     }
   ]

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 平台级 MCP 目录：名称、URL、协议、允许工具、状态、审核信息
 - [ ] 租户启用/停用；凭据由 AI 服务保管，runner 只拿到代理地址

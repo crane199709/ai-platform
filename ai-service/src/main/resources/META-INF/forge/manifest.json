@@ -23,6 +23,22 @@
     "ai:prompt:rollback": {
       "name": "回滚 Prompt",
       "group": "AI 工作台"
+    },
+    "ai:mcp:read": {
+      "name": "MCP read",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:update": {
+      "name": "MCP update",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:publish": {
+      "name": "MCP publish",
+      "group": "AI 工作台"
+    },
+    "ai:mcp:rollback": {
+      "name": "MCP rollback",
+      "group": "AI 工作台"
     }
   },
   "menus": [
@@ -40,7 +56,8 @@
       "code": "ai-user",
       "name": "AI 使用者",
       "permissions": [
-        "ai:conversation:use"
+        "ai:conversation:use",
+        "ai:mcp:read"
       ]
     },
     {
@@ -52,7 +69,11 @@
         "ai:prompt:read",
         "ai:prompt:manage",
         "ai:prompt:publish",
-        "ai:prompt:rollback"
+        "ai:prompt:rollback",
+        "ai:mcp:read",
+        "ai:mcp:update",
+        "ai:mcp:publish",
+        "ai:mcp:rollback"
       ]
     }
   ]

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.saasforge.ai.mcp.mapper.McpCatalogMapper">
+    <select id="lockById" resultType="io.saasforge.ai.mcp.entity.McpCatalog">SELECT * FROM ai_mcp_catalog WHERE id = #{id} AND NOT deleted FOR UPDATE</select>
+</mapper>

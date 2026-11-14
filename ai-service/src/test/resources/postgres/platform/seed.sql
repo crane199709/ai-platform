@@ -67,3 +67,11 @@ INSERT INTO membership_role (membership_id, role_id) VALUES
 INSERT INTO role_permission (role_id, permission_id)
 SELECT '019a2525-0700-7000-8000-000000000041', id FROM permission
 WHERE code IN ('ai:conversation:use', 'ai:prompt:read', 'ai:prompt:manage') AND NOT deleted;
+
+-- MCP 管理与只读使用权限由真实 IAM 发布，未授权成员保持拒绝。
+INSERT INTO role_permission (role_id,permission_id)
+SELECT r.id,p.id FROM role r CROSS JOIN permission p
+WHERE r.code = 'ai-verification' AND p.code IN ('ai:mcp:read','ai:mcp:update','ai:mcp:publish','ai:mcp:rollback') AND NOT p.deleted;
+INSERT INTO role_permission (role_id,permission_id)
+SELECT r.id,p.id FROM role r CROSS JOIN permission p
+WHERE r.code = 'ai-readonly' AND p.code = 'ai:mcp:read' AND NOT p.deleted;

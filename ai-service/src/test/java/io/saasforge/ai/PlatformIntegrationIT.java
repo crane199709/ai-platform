@@ -782,6 +782,107 @@ class PlatformIntegrationIT {
         assertThat(renderPrompt(id, null)).isEqualTo("发布内容 小明");
     }
 
+    @Test
+    void mcpCatalogRequiresReviewAndTenantPublishesIsolatedVersionedEnablement() {
+        String base = "http://127.0.0.1:" + port;
+        var draft = new HashMap<String, Object>(Map.of(
+                "name",
+                "业务只读目录",
+                "url",
+                "https://mcp.example.test/mcp",
+                "protocol",
+                "STREAMABLE_HTTP",
+                "credentialMode",
+                "TENANT_SECRET",
+                "isolation",
+                "TENANT_CREDENTIAL",
+                "tools",
+                List.of(Map.of(
+                        "name",
+                        "lookup",
+                        "description",
+                        "查询状态",
+                        "inputSchema",
+                        Map.of("type", "object"),
+                        "permission",
+                        "ai:mcp:read",
+                        "readOnly",
+                        true))));
+        String id = call(base, HttpMethod.POST, "/platform/mcp", operator, draft, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/mcp", observer, draft, 403);
+        call(base, HttpMethod.GET, "/platform/mcp/" + id, tokenA, null, 401);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/catalog", tokenA, null, 200)
+                        .toString())
+                .doesNotContain(id, "mcp.example.test");
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + id + "/draft",
+                tokenA,
+                Map.of("enabled", true, "toolNames", List.of("lookup")),
+                409);
+        var review = call(base, HttpMethod.POST, "/platform/mcp/" + id + "/publish", operator, Map.of(), 200)
+                .path("data");
+        assertThat(review.path("reviewedBy").asText()).isEqualTo("019a2525-0000-7000-8000-000000000071");
+        assertThat(review.path("version").asInt()).isEqualTo(1);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/catalog", tokenA, null, 200)
+                        .toString())
+                .contains(id)
+                .doesNotContain("url", "credentialMode", "reviewedBy");
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + id + "/draft",
+                readOnlyMember,
+                Map.of("enabled", true, "toolNames", List.of("lookup")),
+                403);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + id + "/draft",
+                tokenA,
+                Map.of("enabled", true, "toolNames", List.of("lookup")),
+                200);
+        call(platform.gateway(), HttpMethod.POST, "/ai/mcp/" + id + "/publish", tokenA, Map.of(), 200);
+        call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + id, tokenB, null, 404);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + id + "/draft",
+                tokenA,
+                Map.of("enabled", false, "toolNames", List.of()),
+                200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("publishedEnabled")
+                        .asBoolean())
+                .isTrue();
+        call(platform.gateway(), HttpMethod.POST, "/ai/mcp/" + id + "/publish", tokenA, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("publishedEnabled")
+                        .asBoolean())
+                .isFalse();
+        call(platform.gateway(), HttpMethod.POST, "/ai/mcp/" + id + "/versions/1/rollback", tokenA, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + id, tokenA, null, 200)
+                        .path("data")
+                        .path("publishedEnabled")
+                        .asBoolean())
+                .isTrue();
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + id + "/versions", tokenA, null, 200)
+                        .path("data"))
+                .hasSize(2);
+        draft.put("name", "平台未发布草稿");
+        call(base, HttpMethod.PUT, "/platform/mcp/" + id + "/draft", operator, draft, 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/catalog", tokenA, null, 200)
+                        .toString())
+                .contains("业务只读目录")
+                .doesNotContain("平台未发布草稿");
+    }
+
     private String createPrompt(String content) {
         return call(
                         platform.gateway(),

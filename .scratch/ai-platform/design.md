@@ -2,7 +2,7 @@
 
 Status: draft（交接给 `ai-platform` 仓库）
 
-本文件记录 2026-11-14 设计拷问确认的 AI 平台架构与落地顺序。术语与 ADR 在 `ai-platform` 仓库建立后迁入该仓库；本文只作为交接基线，不进入 saas-forge 的产品文档。
+本文件记录 2026-11-14 设计拷问确认的 AI 平台架构与落地顺序。术语与正式 ADR 已迁入本仓库的 docs/GLOSSARY.md 和 docs/adr/；本文保留为交接设计基线。
 
 ## 1. 定位
 

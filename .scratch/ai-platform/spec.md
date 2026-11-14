@@ -1,8 +1,8 @@
 # AI 平台 v1 规格
 
-Status: ready-for-agent（交接给 `ai-platform` 仓库）
+Status: ready-for-agent（本仓库执行）
 
-术语以 [GLOSSARY.md](../../GLOSSARY.md) 为准；AI 领域的新术语在 `ai-platform` 仓库建立后迁入其 `GLOSSARY.md`。平台边界由 [ADR-0028](https://github.com/crane199709/saas-forge/blob/main/docs/adr/0028-ai-capability-as-separate-business-product.md) 记录。设计基线见 [design.md](design.md)。
+术语以 [GLOSSARY.md](../../GLOSSARY.md) 为准；AI 术语正文在 [docs/GLOSSARY.md](../../docs/GLOSSARY.md)。平台边界由 [ADR-0028](https://github.com/crane199709/saas-forge/blob/main/docs/adr/0028-ai-capability-as-separate-business-product.md) 记录。设计基线见 [design.md](design.md)。
 
 ## 问题陈述
 
@@ -106,6 +106,6 @@ v1 交付助手、Skill、MCP、模型、Prompt 五项，以及配额、审计�
 ## 补充说明
 
 - 跨仓库依赖：saas-forge 先交付 Plan token 配额、审计动作、权限动作词与 AI Feature Pack，并发布 SDK 快照；AI 仓库用快照接入，配每日集成构建。
-- `ai-platform` 建立后，把 [design.md](design.md) 的术语迁入其 `GLOSSARY.md`，把 6 个 ADR 候选写成正式 ADR，并把本规格的 issue 迁入该仓库的 issue tracker。
+- 仓库已建立：术语迁入 `docs/GLOSSARY.md`，6 个 ADR 位于 `docs/adr/`，本规格的后续工单由当前仓库的 issue tracker 维护。
 - DSH 是开发者预览，固定版本与契约测试是硬约束；升级策略见 design.md。
 - 本规格的拆分见 `issues/`，编号 00 为跨仓库平台前置。

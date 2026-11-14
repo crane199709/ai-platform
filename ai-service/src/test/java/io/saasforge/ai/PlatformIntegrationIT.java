@@ -70,6 +70,8 @@ class PlatformIntegrationIT {
     String tokenB;
     String operator;
     String tokenWithoutPermission;
+    String readOnlyMember;
+    String observer;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -79,6 +81,8 @@ class PlatformIntegrationIT {
         registry.add("spring.data.redis.port", () -> platform.redis.getMappedPort(6379));
         registry.add("spring.data.redis.database", platform.redis::database);
         registry.add("forge.security.issuer", platform::issuer);
+        registry.add("forge.security.platform.issuer", () -> platform.issuer() + "/platform");
+        registry.add("forge.security.platform.jwk-set-uri", () -> platform.iam() + "/platform/oauth2/jwks");
         registry.add("forge.security.jwk-set-uri", () -> platform.iam() + "/oauth2/jwks");
         registry.add("forge.manifest.iam-uri", platform::iam);
         registry.add("forge.manifest.token", () -> platform.aiToken);
@@ -112,11 +116,205 @@ class PlatformIntegrationIT {
         tokenB = login(false, MEMBER_B);
         tokenWithoutPermission = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000033"));
         operator = login(true, null);
+        observer = login(true, null, "ai-observer");
+        readOnlyMember = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000034"), "ai-reader");
     }
 
     @AfterAll
     void stopPlatform() {
         platform.close();
+    }
+
+    @Test
+    void operatorMaintainsModelCatalogWithoutExposingSecretReferences() {
+        String base = "http://127.0.0.1:" + port;
+        var payload = Map.of(
+                "name",
+                "DeepSeek Chat",
+                "provider",
+                "DEEPSEEK",
+                "modelId",
+                "deepseek-chat",
+                "baseUrl",
+                "https://api.deepseek.com",
+                "secretRef",
+                "DEEPSEEK_API_KEY",
+                "capabilities",
+                java.util.List.of("CHAT", "TOOLS"),
+                "status",
+                "ENABLED",
+                "contextWindow",
+                65536);
+        var created = call(base, HttpMethod.POST, "/platform/models", operator, payload, 201);
+        String id = created.path("data").path("id").asText();
+        assertThat(id).isNotBlank();
+        assertThat(created.toString()).doesNotContain("DEEPSEEK_API_KEY", "secretRef");
+        var read = call(base, HttpMethod.GET, "/platform/models/" + id, operator, null, 200);
+        assertThat(read.path("data").path("modelId").asText()).isEqualTo("deepseek-chat");
+        var listed = call(base, HttpMethod.GET, "/platform/models", operator, null, 200);
+        assertThat(listed.path("data").toString()).contains(id).doesNotContain("DEEPSEEK_API_KEY", "secretRef");
+        var updated = new HashMap<String, Object>(payload);
+        updated.put("name", "DeepSeek Updated");
+        call(base, HttpMethod.PUT, "/platform/models/" + id, operator, updated, 200);
+        assertThat(call(base, HttpMethod.GET, "/platform/models/" + id, operator, null, 200)
+                        .path("data")
+                        .path("name")
+                        .asText())
+                .isEqualTo("DeepSeek Updated");
+        call(base, HttpMethod.DELETE, "/platform/models/" + id, operator, null, 200);
+        call(base, HttpMethod.GET, "/platform/models/" + id, operator, null, 404);
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            for (String action : java.util.List.of("ai.model.create", "ai.model.update", "ai.model.delete")) {
+                var events = call(
+                        platform.iam(),
+                        HttpMethod.GET,
+                        "/platform/audit/events?action=" + action + "&resourceId=" + id,
+                        operator,
+                        null,
+                        200);
+                assertThat(events.path("data")).hasSize(1);
+                var event = events.path("data").get(0);
+                assertThat(event.path("actorId").asText()).isEqualTo("019a2525-0000-7000-8000-000000000071");
+                assertThat(event.path("outcome").asText()).isEqualTo("success");
+                assertThat(event.path("detail").toString()).isEqualTo("{}");
+                assertThat(events.toString()).doesNotContain("DEEPSEEK_API_KEY", "secretRef");
+            }
+        });
+    }
+
+    @Test
+    void tenantSelectionIsIsolatedAndDisabledModelsCannotBeUsed() {
+        String platformBase = "http://127.0.0.1:" + port;
+        var payload = new HashMap<String, Object>(Map.of(
+                "name",
+                "Selection One",
+                "provider",
+                "OPENAI_COMPATIBLE",
+                "modelId",
+                "selection-one",
+                "baseUrl",
+                "https://models.example.test/v1",
+                "secretRef",
+                "OPENAI_TEST_SECRET_REF",
+                "capabilities",
+                java.util.List.of("CHAT"),
+                "status",
+                "ENABLED",
+                "contextWindow",
+                32768));
+        String one = call(platformBase, HttpMethod.POST, "/platform/models", operator, payload, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        payload.put("name", "Selection Two");
+        payload.put("modelId", "selection-two");
+        String two = call(platformBase, HttpMethod.POST, "/platform/models", operator, payload, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenA,
+                Map.of("modelIds", java.util.List.of(one)),
+                200);
+        call(platform.gateway(), HttpMethod.GET, "/ai/models", readOnlyMember, null, 200);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                readOnlyMember,
+                Map.of("modelIds", java.util.List.of(two)),
+                403);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenWithoutPermission,
+                Map.of("modelIds", java.util.List.of(two)),
+                403);
+        var availableA = call(platform.gateway(), HttpMethod.GET, "/ai/models", tokenA, null, 200);
+        assertThat(availableA.path("data").toString())
+                .contains(one)
+                .doesNotContain(two, "secretRef", "OPENAI_TEST_SECRET_REF");
+        call(platform.gateway(), HttpMethod.GET, "/ai/models/" + two, tokenA, null, 409);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/contract/models/" + one, tokenA, null, 200)
+                        .path("data")
+                        .path("modelId")
+                        .asText())
+                .isEqualTo("selection-one");
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/models", tokenB, null, 200)
+                        .path("data")
+                        .toString())
+                .contains(one, two);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenB,
+                Map.of("modelIds", java.util.List.of(two)),
+                200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/models/selection", tokenA, null, 200)
+                        .path("data")
+                        .path("modelIds")
+                        .toString())
+                .contains(one)
+                .doesNotContain(two);
+        payload.put("status", "DISABLED");
+        call(platformBase, HttpMethod.PUT, "/platform/models/" + two, operator, payload, 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/models", tokenB, null, 200)
+                        .path("data"))
+                .isEmpty();
+        call(platform.gateway(), HttpMethod.GET, "/ai/models/" + two, tokenB, null, 409);
+        call(platform.gateway(), HttpMethod.GET, "/ai/contract/models/" + two, tokenB, null, 409);
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenA,
+                Map.of("modelIds", java.util.List.of(two)),
+                409);
+        call(platform.gateway(), HttpMethod.GET, "/ai/models", tokenWithoutPermission, null, 403);
+        call(platformBase, HttpMethod.POST, "/platform/models", tokenA, payload, 401);
+        call(platformBase, HttpMethod.GET, "/models", operator, null, 401);
+        call(platform.gateway(), HttpMethod.DELETE, "/ai/platform/models/" + one, tokenA, null, 401);
+    }
+
+    @Test
+    void platformCatalogRequiresOperatorGrantAndRejectsCredentialBearingUrls() {
+        String base = "http://127.0.0.1:" + port;
+        call(base, HttpMethod.GET, "/platform/models", null, null, 401);
+        call(base, HttpMethod.GET, "/platform/models", observer, null, 403);
+        call(platform.gateway(), HttpMethod.GET, "/ai-platform/models", tokenA, null, 401);
+        call(platform.gateway(), HttpMethod.GET, "/ai-platform/models", observer, null, 403);
+        call(platform.gateway(), HttpMethod.GET, "/ai-platform/models", operator, null, 200);
+        var payload = new HashMap<String, Object>(Map.of(
+                "name",
+                "Invalid",
+                "provider",
+                "OPENAI_COMPATIBLE",
+                "modelId",
+                "invalid-input-model",
+                "baseUrl",
+                "https://user:password@models.example.test/v1",
+                "secretRef",
+                "TEST_REF",
+                "capabilities",
+                java.util.List.of("CHAT"),
+                "status",
+                "ENABLED",
+                "contextWindow",
+                1234));
+        assertThat(call(base, HttpMethod.POST, "/platform/models", operator, payload, 400)
+                        .path("code")
+                        .asText())
+                .isEqualTo("model.invalidEndpoint");
+        payload.put("baseUrl", "https://models.example.test/v1?api_key=fake-key");
+        call(base, HttpMethod.POST, "/platform/models", operator, payload, 400);
+        payload.put("baseUrl", "https://models.example.test/v1");
+        payload.put("secretRef", "sk-not-a-real-key");
+        call(base, HttpMethod.POST, "/platform/models", operator, payload, 400);
     }
 
     @Test
@@ -197,6 +395,10 @@ class PlatformIntegrationIT {
     }
 
     private String login(boolean operatorRealm, UUID membership) throws Exception {
+        return login(operatorRealm, membership, operatorRealm ? "ai-operator" : "ai-member");
+    }
+
+    private String login(boolean operatorRealm, UUID membership, String account) throws Exception {
         String prefix = operatorRealm ? "/platform" : "";
         var cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         var client = RestClient.builder()
@@ -209,7 +411,7 @@ class PlatformIntegrationIT {
         JsonNode login = client.post()
                 .uri(prefix + "/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("account", operatorRealm ? "ai-operator" : "ai-member", "password", "Demo-password-123!"))
+                .body(Map.of("account", account, "password", "Demo-password-123!"))
                 .retrieve()
                 .body(JsonNode.class)
                 .path("data");
@@ -316,8 +518,9 @@ class PlatformIntegrationIT {
     @TestConfiguration(proxyBeanMethods = false)
     static class ProbeConfiguration {
         @Bean
-        ProbeController probeController(ContractMapper mapper) {
-            return new ProbeController(mapper);
+        ProbeController probeController(
+                ContractMapper mapper, io.saasforge.ai.model.service.ModelSelectionService models) {
+            return new ProbeController(mapper, models);
         }
     }
 
@@ -325,9 +528,18 @@ class PlatformIntegrationIT {
     @TestComponent
     public static class ProbeController {
         private final ContractMapper mapper;
+        private final io.saasforge.ai.model.service.ModelSelectionService models;
 
-        ProbeController(ContractMapper mapper) {
+        ProbeController(ContractMapper mapper, io.saasforge.ai.model.service.ModelSelectionService models) {
             this.mapper = mapper;
+            this.models = models;
+        }
+
+        @GetMapping("/contract/models/{id}")
+        @RequiresPermission("ai:conversation:use")
+        public ApiResponse<RuntimeProbe> runtimeConfig(@PathVariable UUID id) {
+            var config = models.resolveForUse(id);
+            return ApiResponse.ok(new RuntimeProbe(config.catalogId(), config.provider(), config.modelId()));
         }
 
         @PostMapping("/contract/records")
@@ -360,6 +572,8 @@ class PlatformIntegrationIT {
             return new ProbeResponse(row.getId(), row.getCreatedBy(), row.getCreatedAt());
         }
     }
+
+    public record RuntimeProbe(UUID id, String provider, String modelId) {}
 
     public record ProbeResponse(UUID id, UUID createdBy, OffsetDateTime createdAt) {}
 

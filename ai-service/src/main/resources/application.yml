@@ -35,9 +35,14 @@ forge:
     # 仅注入本服务的令牌；Platform 在统一映射中配置同一个值。
     token: ${FORGE_OPS_TOKEN}
   security:
+    platform:
+      issuer: ${FORGE_PLATFORM_SECURITY_ISSUER}
+      jwk-set-uri: ${FORGE_PLATFORM_SECURITY_JWK_SET_URI}
     # Tenant Realm 签发者（网关公开地址）与直连 IAM JWKS 地址：平台运维
     issuer: ${FORGE_SECURITY_ISSUER}
     jwk-set-uri: ${FORGE_SECURITY_JWK_SET_URI}
+  tenant:
+    ignore-tables: [ai_model_catalog]
   # 使用统一脱敏执行通道时按 docs/standards/business-service.md 显式启用；导出列与日志参数按该规范接入。
   # 在线 DTO 的 String 属性使用 @SensitiveField，嵌套/集合自动生效；独立原文操作按规范授权并审计。
   # 导出每任务读取一次策略；日志异步刷新一秒快照，首次/过期丢值。无声明的旧服务不新增必配项。

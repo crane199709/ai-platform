@@ -10,8 +10,14 @@ spring:
               uri: lb://ai-service
               predicates: [Path=/ai/**]
               filters: [StripPrefix=1]
+            - id: ai-platform-catalog
+              uri: lb://ai-service
+              predicates: [Path=/ai-platform/**]
+              filters: [StripPrefix=1, PrefixPath=/platform]
 forge:
   gateway:
     services:
       - prefix: /ai
         realm: tenant
+      - prefix: /ai-platform
+        realm: platform

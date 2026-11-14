@@ -63,3 +63,9 @@ AI_FORGE_RUNTIME_REPOSITORY="$HOME/.m2/repository" \
 隔离测试关闭 Nacos，以交付的路由配置直连随机端口，不验证共享环境的 Nacos 发布或服务发现。常规三工程 CI 不要求平台运行分发，远端 SDK 消费与隔离平台验收分别记录。
 
 Runner 仍需 Node 24，仅提供内网 GET `/health`。模型密钥、MCP 凭据、DSH 和聊天能力由后续工单接入，本阶段不使用模型密钥。
+
+## 模型目录接入（工单 06）
+
+V6 迁移建立平台模型目录与租户模型选择。按 [HTTP 契约](../docs/model-api.md) 维护目录；本仓库交付 HTTP API，页面由工作台工单统一接入。网关追加 `/ai-platform/**` Platform Realm 路由，剥离前缀后增加 `/platform`；`/ai/**` 仍为 Tenant Realm。服务两条链分别固定 issuer/JWKS，部署时新增 `.env.example` 的两项 Platform 配置。平台目录复用 `platform:ops:manage`，管理员只向被授权的运营人员授予该现有权限，本工单不改共享环境或已有用户权限。
+
+密钥只通过受控的 Secret/Vault 环境注入，目录仅保存环境变量引用。目录 CRUD 不要求访问真实模型密钥，也不会请求模型端点。给租户启用 AI 时，Plan Feature Pack 中应包含 `ai:conversation:use`，配置管理另含 `ai:configuration:manage`，并按角色授权。未登记 Plan 的历史租户沿用 IAM 的兼容语义。运营禁用目录项后，租户的已有选择不再允许使用该项。

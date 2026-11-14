@@ -14,6 +14,15 @@
 | POST | `/platform/mcp/{id}/versions/{version}/rollback` | 切换当前审核版本，草稿不变 |
 | PUT | `/platform/mcp/{id}/status` | `{ "enabled": false }` 立即阻断目录全部工具 |
 
+平台列表返回下列单项的数组，创建、读取、保存草稿与切换状态返回单项（以下均为 Forge 信封的 `data`）：
+
+```json
+{ "id": "catalog UUID", "draft": { "name": "业务查询", "url": "https://business.example.test/mcp", "protocol": "STREAMABLE_HTTP", "credentialMode": "PUBLIC", "isolation": "PUBLIC_DATA", "tools": [] },
+  "publishedVersion": 2, "enabled": true }
+```
+
+`draft` 是待审核配置，`publishedVersion` 未审核时为 null。发布、回滚返回历史单项，历史接口返回同形数组：`{catalogId,version,configuration,reviewedBy,reviewedAt,current}`；`configuration` 是该版本不可变的完整审核配置，审核人是服务端当前 Operator，审核时间为 ISO UTC。回滚只切换当前审核版本，不重写历史或草稿。
+
 草稿形状：
 
 ```json
@@ -28,7 +37,8 @@
     "description": "读取业务状态",
     "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } } },
     "permission": "orders:order:read",
-    "readOnly": true
+    "readOnly": true,
+    "requiresApproval": false
   }]
 }
 ```
@@ -76,7 +86,7 @@ v1 最多 32 个显式审核工具，原始名称最长 128 字符。只接受 H
 
 ```json
 [{ "id": "catalog UUID", "name": "目录名称", "version": 2,
-   "tools": [{ "name": "lookup", "description": "查询状态", "inputSchema": {"type":"object"}, "permission": "ai:mcp:read", "readOnly": true }] }]
+   "tools": [{ "name": "lookup", "description": "查询状态", "inputSchema": {"type":"object"}, "permission": "ai:mcp:read", "readOnly": true, "requiresApproval": false }] }]
 ```
 
 这是可配置的目录候选，不表示当前成员实际获得使用工具的数据范围。URL、凭据模式、草稿和平台审核人员不返回。
@@ -98,7 +108,7 @@ v1 最多 32 个显式审核工具，原始名称最长 128 字符。只接受 H
    "publishedBy": "Identity UUID", "publishedAt": "2026-11-14T08:00:00Z", "current": true }]
 ```
 
-没有单独的 `scopeStatus` 或权限推测字段。实际可执行清单 `GET /mcp/tools` 经真实 IAM RBAC 和 `ai_mcp_tool` Data Policy 过滤，只返回本成员可用的快照：`{catalogId,catalogVersion,tenantVersion,runtimeName,nativeName,description,inputSchema}`。`runtimeName` 是内部路由名，管理页使用 `nativeName`/目录名称展示；缺数据策略不会偷偷显示为已授权。配置页按钮使用已发布权限码 `ai:mcp:read/update/publish/rollback` 控制，同时以后端 403 为准。
+没有单独的 `scopeStatus` 或权限推测字段。实际可执行清单 `GET /mcp/tools` 经真实 IAM RBAC 和 `ai_mcp_tool` Data Policy 过滤，只返回本成员可用的快照：`{catalogId,catalogVersion,tenantVersion,runtimeName,nativeName,description,inputSchema,requiresApproval}`。`runtimeName` 是内部路由名，管理页使用 `nativeName`/目录名称展示；缺数据策略不会偷偷显示为已授权。配置页按钮使用已发布权限码 `ai:mcp:read/update/publish/rollback` 控制，同时以后端 403 为准。
 
 ## 敏感只读工具的用户审批
 

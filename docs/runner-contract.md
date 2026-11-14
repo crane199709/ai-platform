@@ -117,3 +117,5 @@ JSON 错误体是 `{ "code": "runner.*", "retryable": false/true }`。SSE 开始
 工具结果关联来自固定上游公开 `ToolResultMessage.toolCallId`，与对应 `tool.call.callId` 完全相同；`name` 由同回合已观测调用映射取得。Java/UI 可按 callId 关联并行结果，不能按到达顺序猜测。本地官方 Skill 调用同样携带 name=`skill` 与 callId；已启用 Skill 的调用及最终结果由 Java 写元数据审计，MCP 调用仅在授权 Tool Proxy 写审计，避免重复。
 
 消息请求可选 `tools` 使用与建会话完全相同的严格只读工具结构、去重、最多32项与1MiB总body约束；省略时沿用该Runner会话已保存声明，显式 `[]` 撤下全部工具。Java每回合均带当前重新授权的tools，避免重复create返回409后沿用过期声明。Runner在发起回合前更新session.tools并走原model/tools/instructions/skills fingerprint初始化，配置变化重建该租户进程并重放上下文；不会清除产品历史，也不更新已保存的Java历史快照。此接缝只同步工具声明；失败后DB-authoritative单会话恢复由工单11负责，不能据此宣称create409已同步transcript。
+
+部署升级须先发布支持消息 `tools` 的 Runner，再发布始终发送该字段的 Java AI 服务；旧 Runner 的严格未知字段校验会拒绝新调用。已有 Runner 调用者可继续省略该字段。

@@ -34,6 +34,7 @@ spring:
       host: ${FORGE_REDIS_HOST}
       port: ${FORGE_REDIS_PORT}
 forge:
+  business-zone: ${FORGE_BUSINESS_ZONE}
   ops:
     # 仅注入本服务的令牌；Platform 在统一映射中配置同一个值。
     token: ${FORGE_OPS_TOKEN}

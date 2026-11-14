@@ -18,6 +18,7 @@ spring:
         enabled: false
 # 不连接 MQ 的测试关闭投递器与消费端；发布的事件照常写入 Outbox。Outbox 链路测试单独开启并连接测试容器
 forge:
+  business-zone: Asia/Shanghai
   ops:
     token: test-ops-token
   mq:

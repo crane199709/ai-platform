@@ -10,6 +10,7 @@ import io.saasforge.ai.conversation.mapper.ConversationTurnMapper;
 import io.saasforge.ai.conversation.model.SendMessageRequest;
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.runner.service.AgentRuntime;
+import io.saasforge.ai.usage.service.UsageService;
 import io.saasforge.sdk.audit.AuditCategory;
 import io.saasforge.sdk.audit.AuditEvent;
 import io.saasforge.sdk.audit.AuditRealm;
@@ -36,6 +37,7 @@ public class ConversationTurnService {
     private final ConversationTurnMapper turns;
     private final ModelSelectionService models;
     private final AuditRecorder audit;
+    private final UsageService usage;
     private final JsonMapper json = JsonMapper.builder().build();
 
     public ConversationTurnService(
@@ -44,13 +46,15 @@ public class ConversationTurnService {
             ConversationMessageMapper messages,
             ConversationTurnMapper turns,
             ModelSelectionService models,
-            AuditRecorder audit) {
+            AuditRecorder audit,
+            UsageService usage) {
         this.conversations = conversations;
         this.conversationMapper = conversationMapper;
         this.messages = messages;
         this.turns = turns;
         this.models = models;
         this.audit = audit;
+        this.usage = usage;
     }
 
     @Transactional
@@ -90,7 +94,7 @@ public class ConversationTurnService {
                 throw new ForgeException(ConversationErrorCode.BUSY);
             }
         }
-        models.resolveForUse(model);
+        var modelConfig = models.resolveForUse(model);
         var transcript = history.stream()
                 .map(m -> new AgentRuntime.TranscriptMessage(m.getRole(), m.getContent(), m.getToolName()))
                 .toList();
@@ -113,6 +117,7 @@ public class ConversationTurnService {
         turn.setStatus("RUNNING");
         turn.setModelId(model);
         turn.setUsageReported(false);
+        usage.admit(turn.getId(), model, modelConfig.contextWindow());
         turns.insert(turn);
         var user = new ConversationMessage();
         user.setConversationId(id);
@@ -162,15 +167,39 @@ public class ConversationTurnService {
         }
         turn.setStatus(status);
         turn.setErrorCode(code);
+        usageReported = usageReported
+                && usage != null
+                && usage.path("inputTokens").isIntegralNumber()
+                && usage.path("outputTokens").isIntegralNumber()
+                && usage.path("inputTokens").asLong() >= 0
+                && usage.path("outputTokens").asLong() >= 0
+                && (!usage.has("cachedInputTokens")
+                        || (usage.path("cachedInputTokens").isIntegralNumber()
+                                && usage.path("cachedInputTokens").asLong() >= 0
+                                && usage.path("cachedInputTokens").asLong()
+                                        <= usage.path("inputTokens").asLong()));
         turn.setUsageReported(usageReported);
-        if (usageReported && usage != null) {
-            turn.setInputTokens(Math.max(0, usage.path("inputTokens").asLong()));
-            turn.setOutputTokens(Math.max(0, usage.path("outputTokens").asLong()));
+        if (usageReported) {
+            turn.setInputTokens(usage.path("inputTokens").asLong());
+            turn.setOutputTokens(usage.path("outputTokens").asLong());
             if (usage.has("cachedInputTokens")) {
-                turn.setCachedInputTokens(
-                        Math.max(0, usage.path("cachedInputTokens").asLong()));
+                turn.setCachedInputTokens(usage.path("cachedInputTokens").asLong());
             }
         }
+        long toolCount = 0;
+        for (var item : json.readTree(toolCalls)) {
+            if ("tool.call".equals(item.path("phase").asText())) {
+                toolCount++;
+            }
+        }
+        this.usage.finish(
+                turnId,
+                turn.getInputTokens(),
+                turn.getOutputTokens(),
+                turn.getCachedInputTokens(),
+                usageReported,
+                toolCount,
+                status);
         turns.updateById(turn);
         if (!committed.isEmpty()) {
             for (var item : committed) {

@@ -7,6 +7,7 @@ case "$component" in
   service)
     flags=(-U)
     if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
+    if [[ -n "${AI_MAVEN_REPOSITORY:-}" ]]; then flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY"); fi
     (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" verify)
     python3 "$root/.forge-packages/permission-catalog.py" --manifest "$root/ai-service/target/resource-manifest.json" --expected-service ai-service --policy "$root/.forge-packages/permission-policy.json" --previous "$root/.forge-packages/empty-catalog.json" --output "$root/ai-service/target/permission-catalog.json"
     ;;
@@ -19,6 +20,7 @@ case "$component" in
     : "${AI_FORGE_RUNTIME_REPOSITORY:?设置为含 Forge IAM、Platform、Gateway 0.2.0-SNAPSHOT 运行 jar 的 Maven 仓库}"
     flags=(-U)
     if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
+    if [[ -n "${AI_MAVEN_REPOSITORY:-}" ]]; then flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY"); fi
     (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" test -Dtest=PlatformIntegrationIT)
     ;;
   sub-app)

@@ -6,6 +6,7 @@ import io.saasforge.ai.conversation.model.SendMessageRequest;
 import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
 import io.saasforge.ai.skill.service.SkillSnapshot;
+import io.saasforge.ai.usage.service.UsageService;
 import io.saasforge.sdk.core.CurrentTenant;
 import io.saasforge.sdk.security.TenantContext;
 import jakarta.annotation.PreDestroy;
@@ -39,6 +40,7 @@ public class ConversationStreamingService {
     private final ConversationTurnService turns;
     private final ConversationService conversations;
     private final AgentRuntime runtime;
+    private final UsageService usage;
     private final RunnerCapabilityService capabilities;
     private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
     private final ExecutorService executor =
@@ -60,7 +62,9 @@ public class ConversationStreamingService {
             ConversationService conversations,
             AgentRuntime runtime,
             RunnerCapabilityService capabilities,
-            ObjectProvider<Tracer> tracing) {
+            ObjectProvider<Tracer> tracing,
+            UsageService usage) {
+        this.usage = usage;
         this.tracer = tracing.getIfAvailable();
         this.turns = turns;
         this.conversations = conversations;
@@ -71,6 +75,7 @@ public class ConversationStreamingService {
     }
 
     public SseEmitter send(UUID id, SendMessageRequest request) {
+        usage.recoverExpired();
         var prepared = turns.prepare(id, request);
         var emitter = new SseEmitter(130000L);
         if (prepared.replayed()) {
@@ -262,6 +267,11 @@ public class ConversationStreamingService {
                 return;
             }
             JsonNode data = event.data();
+            if ("delta".equals(event.type())
+                    || "tool.call".equals(event.type())
+                    || "tool.result".equals(event.type())) {
+                usage.observedExecution(prepared.turn().getId());
+            }
             switch (event.type()) {
                 case "delta" -> {
                     String text = data.path("text").asText();

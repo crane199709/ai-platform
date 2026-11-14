@@ -2,6 +2,7 @@ package io.saasforge.ai.runner.service;
 
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.runner.config.ModelProxyProperties;
+import io.saasforge.ai.usage.service.UsageService;
 import io.saasforge.sdk.core.api.ForgeException;
 import java.io.IOException;
 import java.net.URI;
@@ -17,14 +18,17 @@ public class RunnerModelProxyService {
     private final Environment environment;
     private final ModelProxyProperties properties;
     private final ProviderTransport transport;
+    private final UsageService usage;
     private final JsonMapper json = JsonMapper.builder().build();
 
     public RunnerModelProxyService(
             ModelSelectionService models,
             Environment environment,
             ProviderTransport transport,
-            ModelProxyProperties properties) {
+            ModelProxyProperties properties,
+            UsageService usage) {
         this.properties = properties;
+        this.usage = usage;
         this.models = models;
         this.environment = environment;
         this.transport = transport;
@@ -65,6 +69,7 @@ public class RunnerModelProxyService {
         body.put("max_tokens", output);
         String base = config.baseUrl().toString().replaceAll("/$", "");
         URI endpoint = URI.create(base + "/chat/completions");
+        usage.modelAttempt(capability.turnId());
         var response = transport.open(endpoint, secret, json.writeValueAsString(body));
         if (response.status() != 200 || !response.contentType().startsWith("text/event-stream")) {
             try {

@@ -4,7 +4,7 @@
 
 **Blocked by:** 00, 02, 04
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 订阅 `TenantPlanChanged`，保存租户 token 配额；超限拒绝新回合
 - [ ] 每回合记录 token 用量（模型、输入/输出、工具调用），按租户/月聚合

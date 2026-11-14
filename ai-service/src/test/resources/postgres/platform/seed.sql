@@ -27,7 +27,7 @@ INSERT INTO platform_role (id, code, name) VALUES ('019a2525-0000-7000-8000-0000
 INSERT INTO operator_role (operator_id, role_id) VALUES ('019a2525-0000-7000-8000-000000000071', '019a2525-0000-7000-8000-000000000072');
 INSERT INTO platform_role_permission (role_id, permission_id)
 SELECT '019a2525-0000-7000-8000-000000000072', id FROM permission
-WHERE code IN ('platform:sub-app:manage', 'platform:service-credential:manage', 'platform:ops:manage', 'platform:audit:read') AND realm = 'platform' AND NOT deleted;
+WHERE code IN ('platform:sub-app:manage', 'platform:service-credential:manage', 'platform:ops:manage', 'platform:audit:read', 'platform:tenant:read', 'platform:tenant:manage', 'platform:plan:manage') AND realm = 'platform' AND NOT deleted;
 
 -- 本次隔离库的只读成员可用 AI，但无配置管理权限。
 INSERT INTO identity (id, account, email, display_name, password_hash) VALUES
@@ -81,3 +81,18 @@ INSERT INTO membership_role (membership_id, role_id) VALUES
 INSERT INTO role_permission (role_id, permission_id)
 SELECT '019a2525-0700-7000-8000-000000000041', id FROM permission
 WHERE code IN ('ai:conversation:use', 'ai:prompt:read', 'ai:prompt:update') AND NOT deleted;
+
+-- 用量验收独立租户，不改变 A/B 的已有模型、角色与套餐断言。
+SET search_path = iam, extensions;
+INSERT INTO tenant(id,name) VALUES ('019a2525-0010-7000-8000-000000000001','AI 用量验收租户');
+INSERT INTO membership(id,identity_id,tenant_id) VALUES ('019a2525-0010-7000-8000-000000000031','019a2525-0000-7000-8000-000000000011','019a2525-0010-7000-8000-000000000001');
+INSERT INTO role(id,tenant_id,code,name,builtin) VALUES ('019a2525-0010-7000-8000-000000000041','019a2525-0010-7000-8000-000000000001','ai-usage-verification','AI 用量验收',false);
+INSERT INTO membership_role(membership_id,role_id) VALUES ('019a2525-0010-7000-8000-000000000031','019a2525-0010-7000-8000-000000000041');
+INSERT INTO role_permission(role_id,permission_id) SELECT '019a2525-0010-7000-8000-000000000041',id FROM permission WHERE code IN ('ai:conversation:use','ai:configuration:manage','iam:audit:read') AND NOT deleted;
+INSERT INTO platform_role_data_policy(role_id,resource,scope) VALUES ('019a2525-0000-7000-8000-000000000072','tenant','all');
+SET search_path = platform, extensions;
+INSERT INTO tenant(id,name,status,admin_contact,region) VALUES
+('019a2525-0000-7000-8000-000000000001','AI 验收租户 A','active','ai-a@example.test','east'),
+('019a2525-0000-7000-8000-000000000002','AI 验收租户 B','active','ai-b@example.test','west'),
+('019a2525-0000-7000-8000-000000000003','AI 无授权租户','active','ai-c@example.test','east'),
+('019a2525-0010-7000-8000-000000000001','AI 用量验收租户','active','ai-usage@example.test','east');

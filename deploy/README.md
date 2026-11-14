@@ -69,3 +69,13 @@ Runner 仍需 Node 24，仅提供内网 GET `/health`。模型密钥、MCP 凭�
 V6 迁移建立平台模型目录与租户模型选择。按 [HTTP 契约](../docs/model-api.md) 维护目录；本仓库交付 HTTP API，页面由工作台工单统一接入。网关追加 `/ai-platform/**` Platform Realm 路由，剥离前缀后增加 `/platform`；`/ai/**` 仍为 Tenant Realm。服务两条链分别固定 issuer/JWKS，部署时新增 `.env.example` 的两项 Platform 配置。平台目录复用 `platform:ops:manage`，管理员只向被授权的运营人员授予该现有权限，本工单不改共享环境或已有用户权限。
 
 密钥只通过受控的 Secret/Vault 环境注入，目录仅保存环境变量引用。目录 CRUD 不要求访问真实模型密钥，也不会请求模型端点。给租户启用 AI 时，Plan Feature Pack 中应包含 `ai:conversation:use`，配置管理另含 `ai:configuration:manage`，并按角色授权。未登记 Plan 的历史租户沿用 IAM 的兼容语义。运营禁用目录项后，租户的已有选择不再允许使用该项。
+
+## 用量与配额（工单 10）
+
+配置 `FORGE_BUSINESS_ZONE`，与平台统一的 `forge.business-zone` 一致；遗漏时服务启动失败。AI V10 和平台 V10 分别保存权威计量与运营投影。用量通过已有 `forge-tenant` Topic 每回合事务发送当日累计快照，至少每日可见；不依赖只扫描 active/trial 租户的定时任务。MQ 暂时不可用时 Outbox 保存待发消息，恢复后版本覆盖防止重复计费。平台升级接收端后再启用运营查看。
+
+有限额度租户每月同时只执行一个回合；当前回合可超额，下个新回合返回 `usage.quotaExceeded`。历史幂等回放不重新计量。未知 usage 显示独立估计占额，取消或网络中断不当免费；超过三分钟的运行账本可由下次准入/查询恢复，运营人员经独立 Platform Realm 与 `platform:ops:manage` 校正估计，保留审计与未知状态。具体 API、缓存 token 子集口径与兼容语义见 [用量契约](../docs/usage-api.md)。租户管理员只能读取用量，不能把估计归零。
+
+新服务接入时，先等待可信 Plan 快照；`quotaKnown=false` 的租户发起新回合返回 503，不会按不限额放行。现有平台 `PUT /platform/tenants/{id}/plan` 分配新套餐会广播；重新分配同一套餐不广播。需要补同步时，运营从套餐详情读取原内容，经现有 `PUT /platform/plans/{id}` 保留名称、Feature Pack 与全部 Quota 重新保存，平台为使用该套餐的租户产生新版本 `TenantPlanChanged`；随后核对 AI 用量响应 `quotaKnown=true` 与实际额度。对尚未分配套餐的历史租户，由运营显式分配符合当前权限的套餐（需要不限额时 tokenQuota=null），不能由AI自行推断为不限额。这些步骤由环境管理员执行，不在本任务中操作共享环境。
+
+隔离运行制品与SDK验证可设置 `AI_MAVEN_REPOSITORY` 指定私有 Maven 仓库，并把同一路径作为 `AI_FORGE_RUNTIME_REPOSITORY`，然后运行 `bash scripts/check.sh service` / `platform`。不设置时保留常规仓库入口；不要以旧运行包验证新平台接收端。

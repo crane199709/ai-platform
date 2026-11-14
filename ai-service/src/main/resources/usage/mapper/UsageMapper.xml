@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.saasforge.ai.usage.mapper.UsageMapper">
+    <insert id="applyPlan">
+        INSERT INTO ai_usage_plan (id,tenant_id,plan_version,token_quota,created_at,updated_at,created_by,updated_by)
+        VALUES (#{id},#{event.tenantId},#{event.version},#{event.tokenQuota},CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL)
+        ON CONFLICT (tenant_id) WHERE NOT deleted DO UPDATE SET plan_version=EXCLUDED.plan_version, token_quota=EXCLUDED.token_quota,
+        updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE ai_usage_plan.plan_version &lt; EXCLUDED.plan_version
+    </insert>
+    <select id="plan" resultType="io.saasforge.ai.usage.model.UsagePlan">
+        SELECT plan_version, token_quota FROM ai_usage_plan WHERE NOT deleted
+    </select>
+    <insert id="ensureMonth">
+        INSERT INTO ai_usage_month(id,tenant_id,billing_month,created_at,updated_at,created_by,updated_by)
+        VALUES (#{id},CAST(current_setting('app.tenant_id') AS uuid),#{month},CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL)
+        ON CONFLICT (tenant_id,billing_month) WHERE NOT deleted DO NOTHING
+    </insert>
+    <select id="lockMonth" resultType="java.util.UUID">
+        SELECT id FROM ai_usage_month WHERE billing_month=#{month} AND NOT deleted FOR UPDATE
+    </select>
+    <select id="totals" resultType="io.saasforge.ai.usage.model.UsageTotals">
+        SELECT COALESCE(SUM(CASE WHEN status='FINISHED' THEN input_tokens ELSE 0 END),0) AS input_tokens,
+        COALESCE(SUM(CASE WHEN status='FINISHED' THEN output_tokens ELSE 0 END),0) AS output_tokens,
+        COALESCE(SUM(CASE WHEN status='FINISHED' THEN cached_input_tokens ELSE 0 END),0) AS cached_input_tokens,
+        COALESCE(SUM(estimated_tokens),0) AS estimated_tokens,
+        COUNT(CASE WHEN status='FINISHED' THEN 1 END) AS turn_count,
+        COALESCE(SUM(tool_calls),0) AS tool_calls,
+        COUNT(CASE WHEN unknown_usage THEN 1 END) AS unknown_usage_turns,
+        COUNT(CASE WHEN status='RUNNING' THEN 1 END) AS active_turns
+        FROM ai_usage_ledger WHERE billing_month=#{month} AND NOT deleted
+    </select>
+    <select id="days" resultType="io.saasforge.ai.usage.model.DailyUsage">
+        SELECT usage_date,snapshot_version AS version,input_tokens,output_tokens,cached_input_tokens,turn_count,tool_calls,unknown_usage_turns,estimated_tokens,reported_at
+        FROM ai_usage_daily WHERE usage_date &gt;=#{from} AND usage_date &lt;#{to} AND NOT deleted ORDER BY usage_date
+    </select>
+    <select id="expired" resultType="io.saasforge.ai.usage.entity.UsageLedger">
+        SELECT * FROM ai_usage_ledger WHERE billing_month=#{month} AND status='RUNNING' AND created_at &lt; CURRENT_TIMESTAMP - INTERVAL '3' MINUTE AND NOT deleted
+    </select>
+    <insert id="rebuildDay">
+        INSERT INTO ai_usage_daily(id,tenant_id,usage_date,snapshot_version,input_tokens,output_tokens,cached_input_tokens,estimated_tokens,turn_count,tool_calls,unknown_usage_turns,reported_at,created_at,updated_at,created_by,updated_by)
+        SELECT #{id},CAST(current_setting('app.tenant_id') AS uuid),#{date},1,
+        COALESCE(SUM(input_tokens),0),COALESCE(SUM(output_tokens),0),COALESCE(SUM(cached_input_tokens),0),COALESCE(SUM(estimated_tokens),0),
+        COUNT(*),COALESCE(SUM(tool_calls),0),COUNT(CASE WHEN unknown_usage THEN 1 END),CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL
+        FROM ai_usage_ledger WHERE usage_date=#{date} AND status='FINISHED' AND NOT deleted
+        ON CONFLICT (tenant_id,usage_date) WHERE NOT deleted DO UPDATE SET snapshot_version=ai_usage_daily.snapshot_version+1,
+        input_tokens=EXCLUDED.input_tokens,output_tokens=EXCLUDED.output_tokens,cached_input_tokens=EXCLUDED.cached_input_tokens,
+        estimated_tokens=EXCLUDED.estimated_tokens,turn_count=EXCLUDED.turn_count,tool_calls=EXCLUDED.tool_calls,
+        unknown_usage_turns=EXCLUDED.unknown_usage_turns,reported_at=EXCLUDED.reported_at,updated_at=CURRENT_TIMESTAMP,updated_by=NULL
+    </insert>
+    <select id="day" resultType="io.saasforge.ai.usage.model.DailyUsage">
+        SELECT usage_date,snapshot_version AS version,input_tokens,output_tokens,cached_input_tokens,turn_count,tool_calls,unknown_usage_turns,estimated_tokens,reported_at
+        FROM ai_usage_daily WHERE usage_date=#{date} AND NOT deleted
+    </select>
+</mapper>

@@ -8,9 +8,14 @@ import io.saasforge.ai.runner.service.AgentRuntime;
 import io.saasforge.ai.runner.service.ProviderTransport;
 import io.saasforge.ai.runner.service.RunnerCapabilityService;
 import io.saasforge.sdk.audit.AuditLog;
+import io.saasforge.sdk.core.CurrentTenant;
 import io.saasforge.sdk.core.api.ApiResponse;
 import io.saasforge.sdk.core.api.ErrorCode;
 import io.saasforge.sdk.core.api.ForgeException;
+import io.saasforge.sdk.manifest.ResourceManifestCollector;
+import io.saasforge.sdk.mq.EventPublisher;
+import io.saasforge.sdk.provisioning.TenantCreated;
+import io.saasforge.sdk.provisioning.TenantPlanChanged;
 import io.saasforge.sdk.security.RequiresPermission;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,6 +33,8 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -60,7 +67,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.jdbc.Sql;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -77,6 +87,15 @@ import tools.jackson.databind.node.ObjectNode;
 @Import(PlatformIntegrationIT.ProbeConfiguration.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PlatformIntegrationIT {
+    static final UUID USAGE_TENANT = UUID.fromString("019a2525-0010-7000-8000-000000000001");
+    static final UUID USAGE_MEMBER = UUID.fromString("019a2525-0010-7000-8000-000000000031");
+
+    @Autowired
+    EventPublisher usageEvents;
+
+    @Autowired
+    PlatformTransactionManager usageTransactions;
+
     static final UUID TENANT_A = UUID.fromString("019a2525-0000-7000-8000-000000000001");
     static final UUID MEMBER_A = UUID.fromString("019a2525-0000-7000-8000-000000000031");
     static final UUID MEMBER_B = UUID.fromString("019a2525-0000-7000-8000-000000000032");
@@ -89,6 +108,7 @@ class PlatformIntegrationIT {
     String readOnlyMember;
     String observer;
     String skillEditor;
+    long usageInitialVersion;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -139,11 +159,415 @@ class PlatformIntegrationIT {
         observer = login(true, null, "ai-observer");
         readOnlyMember = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000034"), "ai-reader");
         skillEditor = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000035"), "ai-skill-editor");
+        var featurePack = new ArrayList<>(
+                ResourceManifestCollector.collect(
+                                "ai-service",
+                                "test",
+                                "io.saasforge.ai",
+                                getClass().getClassLoader())
+                        .permissions()
+                        .stream()
+                        .map(p -> p.code())
+                        .toList());
+        long bootstrapVersionA = tokenVersion(tokenA);
+        long bootstrapVersionB = tokenVersion(tokenB);
+        for (UUID tenant : List.of(TENANT_A, UUID.fromString("019a2525-0000-7000-8000-000000000002"))) {
+            sendUsagePlan(new TenantPlanChanged(
+                    tenant, UUID.randomUUID(), "known-legacy", featurePack, List.of("ai"), null, null, 1));
+        }
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            assertThat(tokenVersion(login(false, MEMBER_A))).isGreaterThan(bootstrapVersionA);
+            assertThat(tokenVersion(login(false, MEMBER_B))).isGreaterThan(bootstrapVersionB);
+            assertThat(usage(login(false, MEMBER_A)).path("quotaKnown").asBoolean())
+                    .isTrue();
+            assertThat(usage(login(false, MEMBER_B)).path("quotaKnown").asBoolean())
+                    .isTrue();
+        });
+        tokenA = login(false, MEMBER_A);
+        tokenB = login(false, MEMBER_B);
+        readOnlyMember = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000034"), "ai-reader");
+        skillEditor = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000035"), "ai-skill-editor");
+        CurrentTenant.run(
+                USAGE_TENANT,
+                () -> new TransactionTemplate(usageTransactions)
+                        .executeWithoutResult(status -> usageEvents.publish(
+                                "forge-tenant",
+                                new TenantCreated(USAGE_TENANT, "AI 用量验收租户", "ai-member@example.test", "active"))));
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var roles = call(platform.gateway(), HttpMethod.GET, "/iam/roles", login(false, USAGE_MEMBER), null, 200)
+                    .path("data");
+            assertThat(roles.toString()).contains("ai-user", "ai-admin");
+            var admin = StreamSupport.stream(roles.spliterator(), false)
+                    .filter(r -> r.path("code").asText().equals("ai-admin"))
+                    .findFirst()
+                    .orElseThrow();
+            var declared = ResourceManifestCollector.collect(
+                            "ai-service", "test", "io.saasforge.ai", getClass().getClassLoader())
+                    .permissions()
+                    .stream()
+                    .map(p -> p.code())
+                    .toList();
+            assertThat(StreamSupport.stream(admin.path("permissions").spliterator(), false)
+                            .map(JsonNode::asText)
+                            .toList())
+                    .containsExactlyInAnyOrderElementsOf(declared);
+        });
+        usageInitialVersion = tokenVersion(login(false, USAGE_MEMBER));
     }
 
     @AfterAll
     void stopPlatform() {
         platform.close();
+    }
+
+    @Test
+    void planQuotaUsageReplayUnknownRecoveryAndRealPlatformDelivery() throws Exception {
+        String unreadyToken = login(false, USAGE_MEMBER);
+        String unreadyModel = createConversationModel();
+        String unreadyId = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        unreadyToken,
+                        Map.of("title", "Plan pending", "modelId", unreadyModel),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var pending = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/conversations/" + unreadyId + "/messages",
+                unreadyToken,
+                Map.of(
+                        "text",
+                        "not admitted",
+                        "idempotencyKey",
+                        UUID.randomUUID().toString()),
+                503);
+        assertThat(pending.path("code").asText()).isEqualTo("usage.planUnavailable");
+        var createPlan = new HashMap<String, Object>(usagePlanBody(11L));
+        createPlan.put("code", "usage-" + UUID.randomUUID());
+        String planId = call(platform.gateway(), HttpMethod.POST, "/platform/plans", operator, createPlan, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/platform/tenants/" + USAGE_TENANT + "/plan",
+                operator,
+                Map.of("planId", planId),
+                200);
+        awaitUsagePlan(1, 11L);
+        call(platform.gateway(), HttpMethod.PUT, "/platform/plans/" + planId, operator, usagePlanBody(11L), 200);
+        awaitUsagePlan(2, 11L);
+        sendUsagePlan(new TenantPlanChanged(
+                USAGE_TENANT,
+                UUID.randomUUID(),
+                "old",
+                List.of("ai:conversation:use", "ai:configuration:manage"),
+                List.of("ai"),
+                null,
+                null,
+                1));
+        sendUsagePlan(new TenantPlanChanged(
+                USAGE_TENANT,
+                UUID.randomUUID(),
+                "duplicate",
+                List.of("ai:conversation:use", "ai:configuration:manage"),
+                List.of("ai"),
+                null,
+                null,
+                2));
+        String token = login(false, USAGE_MEMBER);
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        token,
+                        Map.of("title", "Usage", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String key = UUID.randomUUID().toString();
+        assertThat(sendMessage(id, "known", key, token)).contains("event:done");
+        assertThat(sendMessage(id, "known", key, token)).contains("replayed");
+        var known = usage(token);
+        assertThat(known.path("planVersion").asLong()).isEqualTo(2);
+        assertThat(known.path("inputTokens").asLong()).isEqualTo(9);
+        assertThat(known.path("outputTokens").asLong()).isEqualTo(2);
+        assertThat(known.path("cachedInputTokens").asLong()).isEqualTo(1);
+        assertThat(known.path("totalTokens").asLong()).isEqualTo(11);
+        assertThat(known.path("turnCount").asLong()).isEqualTo(1);
+        assertThat(known.path("toolCalls").asLong()).isEqualTo(1);
+        var denied = call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/conversations/" + id + "/messages",
+                token,
+                Map.of("text", "blocked", "idempotencyKey", UUID.randomUUID().toString()),
+                429);
+        assertThat(denied.path("code").asText()).isEqualTo("usage.quotaExceeded");
+        assertThat(usage(token).path("turnCount").asLong()).isEqualTo(1);
+        String month = YearMonth.now(ZoneId.of("Asia/Shanghai")).toString();
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var received = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/platform/tenants/" + USAGE_TENANT + "/ai-usage?month=" + month,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(received.path("totalTokens").asLong()).isEqualTo(11);
+            assertThat(received.path("turnCount").asLong()).isEqualTo(1);
+        });
+        call(platform.gateway(), HttpMethod.PUT, "/platform/plans/" + planId, operator, usagePlanBody(100L), 200);
+        awaitUsagePlan(3, 100L);
+        token = login(false, USAGE_MEMBER);
+        String activeToken = token;
+        String other = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        token,
+                        Map.of("title", "Concurrent", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var future = HttpClient.newHttpClient()
+                .sendAsync(
+                        HttpRequest.newBuilder(URI.create(platform.gateway() + "/ai/conversations/" + id + "/messages"))
+                                .header("Authorization", "Bearer " + token)
+                                .header("Content-Type", "application/json")
+                                .POST(HttpRequest.BodyPublishers.ofString(
+                                        "{\"text\":\"slow\",\"idempotencyKey\":\"" + UUID.randomUUID() + "\"}"))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            var running = usage(activeToken);
+            assertThat(running.path("activeTurns").asLong()).isEqualTo(1);
+            assertThat(running.path("estimatedTokens").asLong()).isEqualTo(65536);
+        });
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/conversations/" + other + "/messages",
+                token,
+                Map.of("text", "concurrent", "idempotencyKey", UUID.randomUUID().toString()),
+                409);
+        call(platform.gateway(), HttpMethod.POST, "/ai/conversations/" + id + "/cancel", token, null, 200);
+        String cancelled = future.get(10, java.util.concurrent.TimeUnit.SECONDS).body();
+        assertThat(cancelled).contains("CANCELLED");
+        var unknown = usage(token);
+        assertThat(unknown.path("unknownUsageTurns").asLong()).isEqualTo(1);
+        assertThat(unknown.path("estimatedTokens").asLong()).isEqualTo(65536);
+        call(
+                platform.gateway(),
+                HttpMethod.POST,
+                "/ai/conversations/" + other + "/messages",
+                token,
+                Map.of(
+                        "text",
+                        "blocked unknown",
+                        "idempotencyKey",
+                        UUID.randomUUID().toString()),
+                429);
+        String turnId = capabilityTurnId(cancelled);
+        String adjust = "/ai-platform/usage/tenants/" + USAGE_TENANT + "/turns/" + turnId + "/estimate";
+        var adjustment = Map.of("estimatedTokens", 20, "reasonCode", "PROVIDER_RECONCILIATION");
+        call(platform.gateway(), HttpMethod.PUT, adjust, token, adjustment, 401);
+        call(platform.gateway(), HttpMethod.PUT, adjust, observer, adjustment, 403);
+        var corrected = call(platform.gateway(), HttpMethod.PUT, adjust, operator, adjustment, 200)
+                .path("data");
+        assertThat(corrected.path("estimatedTokens").asLong()).isEqualTo(20);
+        assertThat(corrected.path("unknownUsageTurns").asLong()).isEqualTo(1);
+        assertThat(sendMessage(other, "recovered", UUID.randomUUID().toString(), token))
+                .contains("event:done");
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var audits = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/iam/platform/audit/events?action=ai.usage.adjustEstimate&resourceId=" + turnId,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(audits).hasSize(1);
+            assertThat(audits.get(0)
+                            .path("detail")
+                            .path("previousEstimatedTokens")
+                            .asLong())
+                    .isEqualTo(65536);
+            assertThat(audits.toString()).doesNotContain("slow", "secret", "contextToken");
+            var received = call(
+                            platform.gateway(),
+                            HttpMethod.GET,
+                            "/platform/tenants/" + USAGE_TENANT + "/ai-usage?month=" + month,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(received.path("totalTokens").asLong()).isEqualTo(22);
+            assertThat(received.path("estimatedTokens").asLong()).isEqualTo(20);
+            assertThat(received.path("unknownUsageTurns").asLong()).isEqualTo(1);
+        });
+        sendUsagePlan(new TenantPlanChanged(
+                USAGE_TENANT,
+                UUID.randomUUID(),
+                "historic",
+                List.of("ai:conversation:use", "ai:configuration:manage"),
+                List.of("ai"),
+                null,
+                null,
+                4));
+        awaitUsagePlan(4, null);
+    }
+
+    private Map<String, Object> usagePlanBody(Long quota) {
+        var body = new HashMap<String, Object>();
+        body.put("name", "AI 用量验收套餐");
+        body.put("permissions", List.of("ai:conversation:use", "ai:configuration:manage"));
+        body.put("subApps", List.of("ai"));
+        body.put("tokenQuota", quota);
+        return body;
+    }
+
+    @Test
+    void roleTemplatesProvisionRealIamRolesAndMatchDeclaredPermissions() {
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            String token = login(false, USAGE_MEMBER);
+            var roles = call(platform.gateway(), HttpMethod.GET, "/iam/roles", token, null, 200)
+                    .path("data");
+            var user = StreamSupport.stream(roles.spliterator(), false)
+                    .filter(r -> r.path("code").asText().equals("ai-user"))
+                    .findFirst()
+                    .orElseThrow();
+            var admin = StreamSupport.stream(roles.spliterator(), false)
+                    .filter(r -> r.path("code").asText().equals("ai-admin"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(user.path("permissions").toString()).isEqualTo("[\"ai:conversation:use\"]");
+            var declared = ResourceManifestCollector.collect(
+                            "ai-service", "test", "io.saasforge.ai", getClass().getClassLoader())
+                    .permissions()
+                    .stream()
+                    .map(p -> p.code())
+                    .toList();
+            assertThat(StreamSupport.stream(admin.path("permissions").spliterator(), false)
+                            .map(JsonNode::asText)
+                            .toList())
+                    .contains("ai:conversation:use", "ai:configuration:manage")
+                    .isSubsetOf(declared);
+        });
+    }
+
+    private long tokenVersion(String token) {
+        return JsonMapper.builder()
+                .build()
+                .readTree(Base64.getUrlDecoder().decode(token.split("\\.")[1]))
+                .path("ver")
+                .asLong();
+    }
+
+    private String capabilityTurnId(String sse) {
+        for (String line : sse.split("\n")) {
+            if (line.startsWith("data:")) {
+                var node = JsonMapper.builder().build().readTree(line.substring(5));
+                if (node.has("turnId")) {
+                    return node.path("turnId").asText();
+                }
+            }
+        }
+        throw new AssertionError("Missing turnId");
+    }
+
+    private JsonNode usage(String token) {
+        return call(platform.gateway(), HttpMethod.GET, "/ai/usage", token, null, 200)
+                .path("data");
+    }
+
+    private void sendUsagePlan(TenantPlanChanged event) {
+        CurrentTenant.run(
+                event.tenantId(),
+                () -> new TransactionTemplate(usageTransactions)
+                        .executeWithoutResult(status -> usageEvents.publish("forge-tenant", event)));
+    }
+
+    private void awaitUsagePlan(long version, Long quota) {
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            String token = login(false, USAGE_MEMBER);
+            assertThat(tokenVersion(token)).isGreaterThanOrEqualTo(usageInitialVersion + version);
+            var result = usage(token);
+            assertThat(result.path("planVersion").asLong()).isEqualTo(version);
+            if (quota == null) {
+                assertThat(result.path("tokenQuota").isNull()).isTrue();
+            } else {
+                assertThat(result.path("tokenQuota").asLong()).isEqualTo(quota);
+            }
+        });
+    }
+
+    @Test
+    @Sql("/platform/usage-expired.sql")
+    void expiredReservationsRecoverWithoutInventingUsageAndStayInTheirBusinessMonth() {
+        var recovered = call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=2026-09", tokenA, null, 200)
+                .path("data");
+        assertThat(recovered.path("activeTurns").asLong()).isZero();
+        assertThat(recovered.path("turnCount").asLong()).isEqualTo(2);
+        assertThat(recovered.path("unknownUsageTurns").asLong()).isEqualTo(1);
+        assertThat(recovered.path("totalTokens").asLong()).isZero();
+        assertThat(recovered.path("estimatedTokens").asLong()).isEqualTo(100);
+        var repeated = call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=2026-09", tokenA, null, 200)
+                .path("data");
+        assertThat(repeated.path("days").get(0).path("version").asLong()).isEqualTo(2);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=2026-09", tokenB, null, 200)
+                        .path("data")
+                        .path("turnCount")
+                        .asLong())
+                .isZero();
+    }
+
+    @Test
+    void unstartedRuntimeRejectionHasNoModelCost() throws Exception {
+        var before = usage(tokenA);
+        String model = createConversationModel();
+        String id = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Pool refusal", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        assertThat(sendMessage(
+                        id, "pool full before execution", UUID.randomUUID().toString(), tokenA))
+                .contains("event:error");
+        var after = usage(tokenA);
+        assertThat(after.path("totalTokens").asLong())
+                .isEqualTo(before.path("totalTokens").asLong());
+        assertThat(after.path("estimatedTokens").asLong())
+                .isEqualTo(before.path("estimatedTokens").asLong());
+        assertThat(after.path("unknownUsageTurns").asLong())
+                .isEqualTo(before.path("unknownUsageTurns").asLong());
+        assertThat(after.path("turnCount").asLong())
+                .isEqualTo(before.path("turnCount").asLong() + 1);
+    }
+
+    @Test
+    void usageIsVisibleToTenantAdministratorsAndDeniedToOrdinaryMembers() {
+        var usage = call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=2026-11", tokenA, null, 200)
+                .path("data");
+        assertThat(usage.path("businessZone").asText()).isEqualTo("Asia/Shanghai");
+        assertThat(usage.path("month").asText()).isEqualTo("2026-11");
+        call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=2026-11", readOnlyMember, null, 403);
+        call(platform.gateway(), HttpMethod.GET, "/ai/usage?month=invalid", tokenA, null, 400);
     }
 
     @Test
@@ -640,6 +1064,9 @@ class PlatformIntegrationIT {
 
         public void run(Run request, Consumer<Event> emit) {
             requests.add(request);
+            if (request.text().equals("pool full before execution")) {
+                throw new ForgeException(io.saasforge.ai.runner.service.RunnerErrorCode.UNAVAILABLE);
+            }
             if (request.text().equals("slow") || request.text().equals("idle")) {
                 for (int i = 0;
                         i < 1000 && !cancelled.contains(request.session().sessionId());

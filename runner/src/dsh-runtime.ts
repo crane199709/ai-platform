@@ -13,9 +13,11 @@ import {
   type TranscriptMessage,
   type Usage,
   type ReadOnlyTool,
+  type SkillSnapshot,
 } from './runtime.ts'
 
 interface Session {
+  skills: SkillSnapshot[]
   instructions: string
   tools: ReadOnlyTool[]
   model: string
@@ -50,6 +52,7 @@ export class DshRuntime implements AgentRuntime {
   private model?: string
   private tools: ReadOnlyTool[] = []
   private instructions = ''
+  private skills: SkillSnapshot[] = []
   private bridge?: Server
   private directory?: string
   private turn?: Turn
@@ -73,7 +76,12 @@ export class DshRuntime implements AgentRuntime {
       this.stopping !== undefined
     )
   }
-  async initialize(model: string, tools: ReadOnlyTool[] = [], instructions = ''): Promise<void> {
+  async initialize(
+    model: string,
+    tools: ReadOnlyTool[] = [],
+    instructions = '',
+    skills: SkillSnapshot[] = [],
+  ): Promise<void> {
     if (this.closed) throw new RuntimeError('runner.tenantClosed', 503, true)
     if (this.stopping) await this.stopping
     if (this.starting) await this.starting
@@ -81,21 +89,28 @@ export class DshRuntime implements AgentRuntime {
       this.process &&
       this.model === model &&
       this.instructions === instructions &&
+      JSON.stringify(this.skills) === JSON.stringify(skills) &&
       JSON.stringify(this.tools) === JSON.stringify(tools)
     )
       return
     if (this.turn) throw new RuntimeError('runner.tenantBusy', 409)
-    this.starting = this.start(model, tools, instructions)
+    this.starting = this.start(model, tools, instructions, skills)
     try {
       await this.starting
     } finally {
       this.starting = undefined
     }
   }
-  private async start(model: string, tools: ReadOnlyTool[], instructions: string) {
+  private async start(
+    model: string,
+    tools: ReadOnlyTool[],
+    instructions: string,
+    skills: SkillSnapshot[],
+  ) {
     await this.stopProcess()
     this.tools = tools
     this.instructions = instructions
+    this.skills = structuredClone(skills)
     await mkdir(this.options.rootDir, { recursive: true, mode: 0o700 })
     this.directory = await mkdtemp(join(this.options.rootDir, 'tenant-'))
     const bridge = createServer((request, response) => {
@@ -174,6 +189,7 @@ export class DshRuntime implements AgentRuntime {
       rpcTimeoutMs: this.options.rpcTimeoutMs,
       cpuSeconds: this.options.cpuSeconds,
       hasTools: tools.length > 0,
+      skills,
       instructions,
     })
     this.process = process
@@ -269,7 +285,7 @@ export class DshRuntime implements AgentRuntime {
     if (this.busy) throw new RuntimeError('runner.tenantBusy', 409)
     this.admitting = true
     try {
-      await this.initialize(input.model, input.tools, input.instructions)
+      await this.initialize(input.model, input.tools, input.instructions, input.skills)
       if (this.closed) throw new RuntimeError('runner.tenantClosed', 503, true)
       const runtimeId = randomUUID()
       await this.process!.rpc('session/working-directory/get', { sessionId: runtimeId })
@@ -277,6 +293,7 @@ export class DshRuntime implements AgentRuntime {
         model: input.model,
         tools: input.tools ?? [],
         instructions: input.instructions ?? '',
+        skills: structuredClone(input.skills ?? []),
         transcript: structuredClone(input.transcript ?? []),
         runtimeId,
         needsReplay: (input.transcript?.length ?? 0) > 0,
@@ -301,7 +318,12 @@ export class DshRuntime implements AgentRuntime {
     this.pendingAbort = false
     let timeout: NodeJS.Timeout | undefined
     try {
-      await this.initialize(input.model ?? session.model, session.tools, session.instructions)
+      await this.initialize(
+        input.model ?? session.model,
+        session.tools,
+        session.instructions,
+        session.skills,
+      )
       if (this.pendingAbort || this.closed) throw new RuntimeError('runner.cancelled')
       session.model = input.model ?? session.model
       const history = session.needsReplay ? session.transcript : []

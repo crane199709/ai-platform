@@ -8,11 +8,27 @@
       "name": "使用 AI 助手",
       "group": "AI 工作台"
     },
+    "ai:skill:read": {
+      "name": "读取 Skill 配置",
+      "group": "AI 工作台"
+    },
+    "ai:skill:update": {
+      "name": "修改 Skill 草稿",
+      "group": "AI 工作台"
+    },
+    "ai:skill:publish": {
+      "name": "发布 Skill 配置",
+      "group": "AI 工作台"
+    },
+    "ai:skill:rollback": {
+      "name": "回滚 Skill 配置",
+      "group": "AI 工作台"
+    },
     "ai:prompt:read": {
       "name": "读取 Prompt",
       "group": "AI 工作台"
     },
-    "ai:prompt:manage": {
+    "ai:prompt:update": {
       "name": "管理 Prompt 草稿",
       "group": "AI 工作台"
     },
@@ -66,8 +82,12 @@
       "permissions": [
         "ai:conversation:use",
         "ai:configuration:manage",
+        "ai:skill:read",
+        "ai:skill:update",
+        "ai:skill:publish",
+        "ai:skill:rollback",
         "ai:prompt:read",
-        "ai:prompt:manage",
+        "ai:prompt:update",
         "ai:prompt:publish",
         "ai:prompt:rollback",
         "ai:mcp:read",

@@ -15,12 +15,21 @@ export interface ReadOnlyTool {
   inputSchema: Record<string, unknown>
   readOnly: true
 }
+export interface SkillSnapshot {
+  catalogId: string
+  code: string
+  name: string
+  description: string
+  version: number
+  content: string
+}
 export interface SessionInput {
   sessionId: string
   model: string
   transcript?: TranscriptMessage[]
   tools?: ReadOnlyTool[]
   instructions?: string
+  skills?: SkillSnapshot[]
 }
 export interface MessageInput {
   text: string

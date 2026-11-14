@@ -73,6 +73,7 @@ class PlatformIntegrationIT {
     String tokenWithoutPermission;
     String readOnlyMember;
     String observer;
+    String skillEditor;
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -119,11 +120,208 @@ class PlatformIntegrationIT {
         operator = login(true, null);
         observer = login(true, null, "ai-observer");
         readOnlyMember = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000034"), "ai-reader");
+        skillEditor = login(false, UUID.fromString("019a2525-0000-7000-8000-000000000035"), "ai-skill-editor");
     }
 
     @AfterAll
     void stopPlatform() {
         platform.close();
+    }
+
+    @Test
+    void tenantCannotDiscoverOrConfigureUnpublishedSkillDraft() {
+        String base = "http://127.0.0.1:" + port;
+        var draft = Map.of(
+                "code",
+                "skill-unpublished-test",
+                "name",
+                "Unpublished draft name",
+                "description",
+                "Unpublished draft description",
+                "content",
+                "Unpublished body",
+                "status",
+                "REVIEWED");
+        String id = call(base, HttpMethod.POST, "/platform/skills", operator, draft, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills", tokenA, null, 200)
+                        .path("data")
+                        .toString())
+                .doesNotContain(id, "Unpublished draft name", "Unpublished draft description");
+        call(platform.gateway(), HttpMethod.GET, "/ai/skills/" + id, tokenA, null, 409);
+        call(platform.gateway(), HttpMethod.PUT, "/ai/skills/" + id + "/draft", tokenA, Map.of("enabled", false), 409);
+    }
+
+    @Test
+    void tenantSkillPublicationIsAuthorizedIsolatedVersionedAndAudited() {
+        String base = "http://127.0.0.1:" + port;
+        var draft = new HashMap<String, Object>(Map.of(
+                "code",
+                "skill-tenant-test",
+                "name",
+                "Tenant Skill",
+                "description",
+                "Reviewed tenant assistance",
+                "content",
+                "Original skill private marker.",
+                "status",
+                "REVIEWED"));
+        String id = call(base, HttpMethod.POST, "/platform/skills", operator, draft, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(platform.gateway(), HttpMethod.PUT, "/ai/skills/" + id + "/draft", tokenA, Map.of("enabled", true), 409);
+        call(base, HttpMethod.POST, "/platform/skills/" + id + "/publish", operator, Map.of(), 200);
+        String path = "/ai/skills/" + id;
+        call(platform.gateway(), HttpMethod.GET, "/ai/skills", readOnlyMember, null, 403);
+        call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenWithoutPermission, null, 403);
+        call(platform.gateway(), HttpMethod.PUT, path + "/draft", skillEditor, Map.of("enabled", true), 200);
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", skillEditor, Map.of(), 403);
+        call(platform.gateway(), HttpMethod.POST, path + "/rollback", skillEditor, Map.of("version", 1), 403);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data"))
+                .isEmpty();
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", tokenA, Map.of(), 200);
+        var first = call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", readOnlyMember, null, 200)
+                .path("data");
+        assertThat(first).hasSize(1);
+        assertThat(first.get(0).path("version").asInt()).isEqualTo(1);
+        assertThat(first.get(0).path("content").asText()).isEqualTo("Original skill private marker.");
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenB, null, 200)
+                        .path("data"))
+                .isEmpty();
+        assertThat(call(platform.gateway(), HttpMethod.GET, path, tokenB, null, 200)
+                        .path("data")
+                        .path("enabled")
+                        .asBoolean())
+                .isFalse();
+        draft.put("content", "New skill private marker.");
+        call(base, HttpMethod.PUT, "/platform/skills/" + id, operator, draft, 200);
+        call(base, HttpMethod.POST, "/platform/skills/" + id + "/publish", operator, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data")
+                        .get(0)
+                        .path("version")
+                        .asInt())
+                .isEqualTo(1);
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", tokenA, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data")
+                        .get(0)
+                        .path("content")
+                        .asText())
+                .isEqualTo("New skill private marker.");
+        call(platform.gateway(), HttpMethod.PUT, path + "/draft", tokenA, Map.of("enabled", false), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data"))
+                .hasSize(1);
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", tokenA, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data"))
+                .isEmpty();
+        call(platform.gateway(), HttpMethod.PUT, path + "/draft", tokenB, Map.of("enabled", true), 200);
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", tokenB, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, path + "/versions", tokenA, null, 200)
+                        .path("data"))
+                .hasSize(3);
+        assertThat(call(platform.gateway(), HttpMethod.GET, path + "/versions", tokenB, null, 200)
+                        .path("data"))
+                .hasSize(1);
+        call(platform.gateway(), HttpMethod.POST, path + "/rollback", tokenA, Map.of("version", 1), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data")
+                        .get(0)
+                        .path("content")
+                        .asText())
+                .isEqualTo("Original skill private marker.");
+        call(platform.gateway(), HttpMethod.POST, path + "/rollback", tokenB, Map.of("version", 3), 404);
+        draft.put("status", "DISABLED");
+        call(base, HttpMethod.PUT, "/platform/skills/" + id, operator, draft, 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenA, null, 200)
+                        .path("data"))
+                .isEmpty();
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/skills/available", tokenB, null, 200)
+                        .path("data"))
+                .isEmpty();
+        call(platform.gateway(), HttpMethod.POST, path + "/publish", tokenA, Map.of(), 409);
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            for (String action :
+                    java.util.List.of("ai.skill.configuration.publish", "ai.skill.configuration.rollback")) {
+                var events = call(
+                                platform.gateway(),
+                                HttpMethod.GET,
+                                "/iam/audit/events?action=" + action + "&resourceId=" + id,
+                                tokenA,
+                                null,
+                                200)
+                        .path("data");
+                assertThat(events)
+                        .as("Tenant audit action=%s resource=%s", action, id)
+                        .isNotEmpty();
+                for (var event : events) {
+                    assertThat(event.path("actorId").asText()).isEqualTo(IDENTITY);
+                    assertThat(event.path("detail").toString()).isEqualTo("{}");
+                }
+                assertThat(events.toString())
+                        .doesNotContain("Original skill private marker", "New skill private marker");
+            }
+            var events = call(
+                            platform.iam(),
+                            HttpMethod.GET,
+                            "/platform/audit/events?action=ai.skill.publish&resourceId=" + id,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(events).hasSize(2);
+            assertThat(events.toString()).doesNotContain("Original skill private marker", "New skill private marker");
+        });
+    }
+
+    @Test
+    void skillCatalogPublishesImmutableReviewedVersionsAndRollsBack() {
+        String base = "http://127.0.0.1:" + port;
+        var draft = new HashMap<String, Object>(Map.of(
+                "code",
+                "skill-catalog-test",
+                "name",
+                "Skill Catalog",
+                "description",
+                "Reviewed assistance",
+                "content",
+                "Only answer with verified facts.",
+                "status",
+                "REVIEWED"));
+        call(base, HttpMethod.POST, "/platform/skills", tokenA, draft, 401);
+        call(base, HttpMethod.POST, "/platform/skills", observer, draft, 403);
+        var created = call(base, HttpMethod.POST, "/platform/skills", operator, draft, 201)
+                .path("data");
+        String id = created.path("id").asText();
+        assertThat(created.path("publishedVersion").asInt()).isZero();
+        call(base, HttpMethod.POST, "/platform/skills/" + id + "/publish", operator, Map.of(), 200);
+        draft.put("content", "Second reviewed instructions.");
+        call(base, HttpMethod.PUT, "/platform/skills/" + id, operator, draft, 200);
+        var history = call(base, HttpMethod.GET, "/platform/skills/" + id + "/versions", operator, null, 200)
+                .path("data");
+        assertThat(history).hasSize(1);
+        assertThat(history.get(0).path("content").asText()).isEqualTo("Only answer with verified facts.");
+        call(base, HttpMethod.POST, "/platform/skills/" + id + "/publish", operator, Map.of(), 200);
+        var rollback = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/skills/" + id + "/rollback",
+                        operator,
+                        Map.of("version", 1),
+                        200)
+                .path("data");
+        assertThat(rollback.path("publishedVersion").asInt()).isEqualTo(3);
+        assertThat(rollback.path("content").asText()).isEqualTo("Only answer with verified facts.");
+        assertThat(call(base, HttpMethod.GET, "/platform/skills/" + id + "/versions", operator, null, 200)
+                        .path("data"))
+                .hasSize(3);
+        call(base, HttpMethod.POST, "/platform/skills/" + id + "/rollback", operator, Map.of("version", 999), 404);
     }
 
     @Test
@@ -173,7 +371,9 @@ class PlatformIntegrationIT {
                         operator,
                         null,
                         200);
-                assertThat(events.path("data")).hasSize(1);
+                assertThat(events.path("data"))
+                        .as("Platform audit action=%s resourceId=%s", action, id)
+                        .hasSize(1);
                 var event = events.path("data").get(0);
                 assertThat(event.path("actorId").asText()).isEqualTo("019a2525-0000-7000-8000-000000000071");
                 assertThat(event.path("outcome").asText()).isEqualTo("success");
@@ -761,6 +961,12 @@ class PlatformIntegrationIT {
                 Map.of("name", "编辑者草稿", "content", "仍未发布 {{name}}", "variables", List.of("name")),
                 200);
         assertThat(renderPrompt(id, null)).isEqualTo("发布内容 小明");
+        var preview = Map.of("content", "{{name}}", "variables", List.of("name"), "values", Map.of("name", "预览"));
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/preview", editor, preview, 200);
+        var draft = Map.of("name", "无草稿权限", "content", "{{name}}", "variables", List.of("name"));
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts", readOnlyMember, draft, 403);
+        call(platform.gateway(), HttpMethod.PUT, "/ai/prompts/" + id + "/draft", readOnlyMember, draft, 403);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/preview", readOnlyMember, preview, 403);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenWithoutPermission, null, 403);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenB, null, 404);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id + "/versions", tokenB, null, 404);

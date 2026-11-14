@@ -21,7 +21,7 @@
 
 - V7 迁移建立租户草稿、不可变发布版本和独立的平台预置表，全部带标准列与中文注释；租户表启用强制 RLS。草稿保存、发布、回滚锁定同一模板行。回滚只切换发布指针，不改草稿或旧版本。
 - 平台默认模板由迁移发布为 v1，租户可以读取/使用，不能修改、发布或回滚平台预置。租户自定义模板受 SDK 租户隔离。
-- 新增 read/manage/publish/rollback 四项权限，ai-admin 角色包含这些权限。只有 use 权限的普通成员可读取发布选择项，不能读取草稿；草稿管理员仍没有发布/回滚权限。Manifest 版本为 4。
+- 新增 read/update/publish/rollback 四项权限，ai-admin 角色包含这些权限。只有 use 权限的普通成员可读取发布选择项，不能读取草稿；草稿管理员仍没有发布/回滚权限。Manifest 版本为 5。
 - 变量声明与占位符集合必须一致，拒绝非法名称、未闭合、重复声明、缺失/多余渲染值；预览无写入，变量值只做一次字面替换。含正文/变量值的模型覆写安全 toString。
 - 发布/回滚使用真实 AuditLog → Outbox → RocketMQ → IAM 链路，只记录模板 ID、租户、操作人等元数据，detail 为 {}，不写名称、正文、变量值或密钥。
 - 公开接口为 `prompt.service.PromptService.resolvePublished(UUID, Integer, Map<String,String>)`，返回 `ResolvedPromptResponse(templateId, version, content)`；templateId 为 null 时选默认预置，version 为 null 时选当前发布版本。HTTP 管理、预览、默认渲染、只含元数据的发布选择列表见 [Prompt 管理契约](../../../docs/prompt-management.md)。
@@ -37,3 +37,12 @@ TDD 在已确认的 Java HTTP / PostgreSQL / 真实 IAM 权限与审计接缝进
 - topic 准备与启动逻辑位于 `PlatformEnvironment`：broker clusterList 启动门禁、Proxy 端口监听门禁、updateTopic/topicRoute 循环。上述 Maven 日志保留了消费者启动异常；既有夹具没有记录 mqadmin 命令的完整 stdout/stderr，后续 readiness 排查应补有边界的证据。
 - 已合入最新集成基线 90431a6；其相对 2fbac4b 仅涉及 Runner/pnpm/文档，没有 Java 变更。按集成协调要求不因该合并重复无关 Runner 测试。
 - 本轮使用本机缓存 SDK 离线验证，没有重跑排除本机 Forge 缓存的已发布 SDK 下载验收。
+
+
+### 2026-11-14 集成权限对齐与组合诊断
+
+- 依据 Sub-App 页面规范的草稿 `update` 动作，将 Controller、Manifest、管理员角色、真实 IAM seed、Golden 契约与接口文档统一为 `ai:prompt:update`；根权限 `ai:configuration:manage` 保持原契约。Manifest 从 4 递增至 5。
+- 先独立修改 Golden 期望，观察缺少 `ai:prompt:update`、多出 `ai:prompt:manage` 的红灯，再修改声明与接口，窄契约 2/2 通过。日志 `/private/tmp/ai-prompt-update-red.log`、`/private/tmp/ai-prompt-update-green.log`。
+- 真实权限场景覆盖仅草稿编辑权限可创建、保存和预览，但不能发布/回滚；只有 use 权限的成员对创建、保存、预览均被拒绝。本轮完整组合首次复验 11/12 通过，Prompt 全部场景通过，模型审计超时；`/private/tmp/ai-prompt-combined-first.log`。
+- `AI_MAVEN_OFFLINE=true MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh service` 通过全部常规测试及架构、注释、格式、权限目录检查；日志 `/private/tmp/ai-prompt-update-service.log`。
+- 模型单方法与租户审计→模型两方法真实复验分别 1/1、2/2 通过。原完整 12 项再次复验时 Prompt 审计也出现缺失；隔离 Broker `pop.log` 已捕获 `OutOfDirectMemoryError`：堆外内存使用 131727360、上限 134217728，POP checkpoint 申请 4259840 字节失败，伴随 Proxy 超时。Outbox 均已发送，IAM 对应去重/死信记录不存在。证据 `/private/tmp/ai-prompt-combined-probe-evidence/`，尚待调整测试资源后验证因果，不能据此宣称组合验收通过。

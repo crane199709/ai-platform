@@ -8,6 +8,7 @@ import {
   type MessageInput,
   type TranscriptMessage,
   type ReadOnlyTool,
+  type SkillSnapshot,
 } from './runtime.ts'
 
 export interface RunnerOptions {
@@ -122,7 +123,7 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
       })
       if (request.method === 'POST' && request.url?.endsWith('/sessions')) {
         const body = await readJson(request)
-        keys(body, ['sessionId', 'model', 'transcript', 'tools', 'instructions'])
+        keys(body, ['sessionId', 'model', 'transcript', 'tools', 'instructions', 'skills'])
         identifier(body.sessionId)
         model(body.model)
         if (
@@ -132,6 +133,7 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
           throw new RuntimeError('runner.invalidRequest', 400)
         const transcript = parseTranscript(body.transcript)
         const tools = parseTools(body.tools)
+        const skills = parseSkills(body.skills)
         runtime = tenants.get(tenantId)
         if (reaping.has(tenantId)) throw new RuntimeError('runner.tenantBusy', 409)
         const isNewTenant = !runtime
@@ -160,6 +162,7 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
           transcript,
           tools,
           instructions: body.instructions,
+          skills,
         }
         try {
           json(201, await runtime.createSession(input))
@@ -331,6 +334,55 @@ function parseTools(value: unknown): ReadOnlyTool[] {
       description: tool.description,
       inputSchema: tool.inputSchema,
       readOnly: true,
+    }
+  })
+}
+
+function parseSkills(value: unknown): SkillSnapshot[] {
+  if (value === undefined) return []
+  if (
+    !Array.isArray(value) ||
+    value.length > 32 ||
+    Buffer.byteLength(JSON.stringify(value)) > 512 * 1024
+  )
+    throw new RuntimeError('runner.invalidRequest', 400)
+  const codes = new Set<string>()
+  const ids = new Set<string>()
+  return value.map((skill) => {
+    if (!skill || typeof skill !== 'object' || Array.isArray(skill))
+      throw new RuntimeError('runner.invalidRequest', 400)
+    keys(skill, ['catalogId', 'code', 'name', 'description', 'version', 'content'])
+    if (
+      typeof skill.catalogId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(skill.catalogId) ||
+      ids.has(skill.catalogId) ||
+      typeof skill.code !== 'string' ||
+      skill.code.length > 64 ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.code) ||
+      codes.has(skill.code) ||
+      typeof skill.name !== 'string' ||
+      !skill.name.trim() ||
+      skill.name.length > 120 ||
+      typeof skill.description !== 'string' ||
+      !skill.description.trim() ||
+      skill.description.length > 1000 ||
+      !Number.isSafeInteger(skill.version) ||
+      skill.version < 1 ||
+      typeof skill.content !== 'string' ||
+      !skill.content.trim() ||
+      skill.content.length > 64000 ||
+      skill.content.includes('\0')
+    )
+      throw new RuntimeError('runner.invalidRequest', 400)
+    ids.add(skill.catalogId)
+    codes.add(skill.code)
+    return {
+      catalogId: skill.catalogId,
+      code: skill.code,
+      name: skill.name,
+      description: skill.description,
+      version: skill.version,
+      content: skill.content,
     }
   })
 }

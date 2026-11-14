@@ -4,8 +4,8 @@
 
 | 接口 | 权限 | 行为 |
 | --- | --- | --- |
-| `POST /prompts` | `ai:prompt:manage` | 创建租户草稿，201 |
-| `PUT /prompts/{id}/draft` | `ai:prompt:manage` | 保存租户草稿 |
+| `POST /prompts` | `ai:prompt:update` | 创建租户草稿，201 |
+| `PUT /prompts/{id}/draft` | `ai:prompt:update` | 保存租户草稿 |
 | `GET /prompts/{id}` | `ai:prompt:read` | 读取模板、草稿和当前发布版本号 |
 | `GET /prompts/published` | `ai:conversation:use` | 读取可选的已发布模板元数据，不返回草稿或正文 |
 | `POST /prompts/default/render` | `ai:conversation:use` | 渲染平台默认已发布模板 |
@@ -13,7 +13,7 @@
 | `POST /prompts/{id}/publish` | `ai:prompt:publish` | 草稿复制为新的不可变发布版本 |
 | `GET /prompts/{id}/versions` | `ai:prompt:read` | 读取已发布历史，版本号降序 |
 | `POST /prompts/{id}/versions/{version}/rollback` | `ai:prompt:rollback` | 切换当前发布指针，不覆盖草稿与历史 |
-| `POST /prompts/preview` | `ai:prompt:manage` | 校验并渲染输入，不保存或发布 |
+| `POST /prompts/preview` | `ai:prompt:update` | 校验并渲染输入，不保存或发布 |
 | `POST /prompts/{id}/render` | `ai:conversation:use` | 渲染指定已发布快照，省略 version 使用当前发布版本 |
 
 草稿请求为 `{ "name": "报告助手", "content": "请为 {{name}} 编写报告。", "variables": ["name"] }`。

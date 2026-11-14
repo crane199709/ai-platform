@@ -26,7 +26,7 @@ for (const [label, width] of [
     await page.getByTestId(`tenant-option-${a}`).click()
     await expect(page).toHaveURL(/\/apps\/ai\/home/)
     await expect(page.getByRole('heading', { name: 'AI 工作台', exact: true })).toBeVisible()
-    await expect(page).toHaveTitle('SaaS Forge')
+    await expect(page).toHaveTitle('SaaS Forge 租户端')
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
     expect(remoteResponses.length).toBeGreaterThan(0)
     await page.getByRole('button', { name: '新建会话', exact: true }).click()
@@ -60,7 +60,11 @@ for (const [label, width] of [
     await expect(page.getByLabel('消息记录')).toContainText('lookup · 已完成')
     await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
     await page.getByTestId('tenant-switcher').click()
-    await page.getByRole('option', { name: 'AI 验收租户 B', exact: true }).click()
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === '/'),
+      page.getByRole('option', { name: 'AI 验收租户 B', exact: true }).click(),
+    ])
+    await expect(page.getByTestId('tenant-switcher')).toContainText('AI 验收租户 B')
     const tenantList = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/ai/conversations' &&
@@ -76,7 +80,11 @@ for (const [label, width] of [
     await expect(page.getByTestId(`conversation-${conversation}`)).toHaveCount(0)
     await expect(page.getByText(`真实链路-${label}`, { exact: true })).toHaveCount(0)
     await page.getByTestId('tenant-switcher').click()
-    await page.getByRole('option', { name: 'AI 验收租户 A', exact: true }).click()
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === '/'),
+      page.getByRole('option', { name: 'AI 验收租户 A', exact: true }).click(),
+    ])
+    await expect(page.getByTestId('tenant-switcher')).toContainText('AI 验收租户 A')
     await page.goto('/apps/ai/home')
     await page.getByTestId(`conversation-${conversation}`).click()
     await expect(page.getByLabel('消息记录')).toContainText('真实 DSH 已完成只读工具查询。')
@@ -88,7 +96,11 @@ for (const [label, width] of [
       .click()
     await expect(page.getByTestId(`conversation-${conversation}`)).toHaveCount(0)
     await page.getByTestId('tenant-switcher').click()
-    await page.getByRole('option', { name: 'AI 无授权租户', exact: true }).click()
+    await Promise.all([
+      page.waitForURL((url) => url.pathname === '/'),
+      page.getByRole('option', { name: 'AI 无授权租户', exact: true }).click(),
+    ])
+    await expect(page.getByTestId('tenant-switcher')).toContainText('AI 无授权租户')
     await expect(page.getByRole('menuitem', { name: 'AI 工作台', exact: true })).toHaveCount(0)
     await page.goto('/apps/ai/home')
     await expect(page.getByRole('button', { name: '新建会话', exact: true })).toHaveCount(0)

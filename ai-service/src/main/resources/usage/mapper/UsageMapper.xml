@@ -2,13 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="io.saasforge.ai.usage.mapper.UsageMapper">
     <insert id="applyPlan">
-        INSERT INTO ai_usage_plan (id,tenant_id,plan_version,token_quota,created_at,updated_at,created_by,updated_by)
-        VALUES (#{id},#{event.tenantId},#{event.version},#{event.tokenQuota},CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL)
-        ON CONFLICT (tenant_id) WHERE NOT deleted DO UPDATE SET plan_version=EXCLUDED.plan_version, token_quota=EXCLUDED.token_quota,
+        INSERT INTO ai_usage_plan (id,tenant_id,plan_id,plan_code,plan_version,token_quota,created_at,updated_at,created_by,updated_by)
+        VALUES (#{id},#{event.tenantId},#{event.planId},#{event.planCode},#{event.version},#{event.tokenQuota},CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL)
+        ON CONFLICT (tenant_id) WHERE NOT deleted DO UPDATE SET plan_id=EXCLUDED.plan_id,plan_code=EXCLUDED.plan_code,plan_version=EXCLUDED.plan_version, token_quota=EXCLUDED.token_quota,
         updated_at=CURRENT_TIMESTAMP,updated_by=NULL WHERE ai_usage_plan.plan_version &lt; EXCLUDED.plan_version
     </insert>
     <select id="plan" resultType="io.saasforge.ai.usage.model.UsagePlan">
-        SELECT plan_version, token_quota FROM ai_usage_plan WHERE NOT deleted
+        SELECT plan_id,plan_code,plan_version, token_quota FROM ai_usage_plan WHERE NOT deleted
     </select>
     <insert id="ensureMonth">
         INSERT INTO ai_usage_month(id,tenant_id,billing_month,created_at,updated_at,created_by,updated_by)

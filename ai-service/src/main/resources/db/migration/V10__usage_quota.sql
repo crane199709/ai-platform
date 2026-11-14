@@ -1,6 +1,8 @@
 CREATE TABLE ai_usage_plan (
     id uuid PRIMARY KEY,
     tenant_id uuid NOT NULL,
+    plan_id uuid,
+    plan_code varchar(64),
     plan_version bigint NOT NULL,
     token_quota bigint,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -12,6 +14,8 @@ CREATE TABLE ai_usage_plan (
 COMMENT ON TABLE ai_usage_plan IS 'AI 配额与用量持久记录';
 COMMENT ON COLUMN ai_usage_plan.id IS '记录 ID，UUIDv7';
 COMMENT ON COLUMN ai_usage_plan.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN ai_usage_plan.plan_id IS '当前可信 Plan ID，历史快照未提供时为空';
+COMMENT ON COLUMN ai_usage_plan.plan_code IS '当前可信 Plan 编码，供按 Plan 配置留存策略，历史缺省为空';
 COMMENT ON COLUMN ai_usage_plan.plan_version IS '已应用 Plan 版本';
 COMMENT ON COLUMN ai_usage_plan.token_quota IS '每租户每月 Token 上限，空为不限';
 COMMENT ON COLUMN ai_usage_plan.created_at IS '创建时间';

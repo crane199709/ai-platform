@@ -11,6 +11,7 @@ import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.mq.EventPublisher;
 import io.saasforge.sdk.security.OperatorContext;
 import java.time.*;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -134,6 +135,16 @@ public class UsageService {
         publish(row.getUsageDate());
     }
 
+    /** 没有收到可信事件时返回 empty，不把未知套餐变成已知不限。 */
+    @Transactional(readOnly = true)
+    public Optional<UsagePlanSnapshot> currentPlan() {
+        var plan = mapper.plan();
+        return plan == null
+                ? Optional.empty()
+                : Optional.of(
+                        new UsagePlanSnapshot(plan.planId(), plan.planCode(), plan.planVersion(), plan.tokenQuota()));
+    }
+
     @Transactional(readOnly = true)
     public UsageResponse read(String value) {
         YearMonth month = month(value);
@@ -152,6 +163,8 @@ public class UsageService {
                 zone.getId(),
                 plan != null,
                 plan == null ? null : plan.planVersion(),
+                plan == null ? null : plan.planId(),
+                plan == null ? null : plan.planCode(),
                 quota,
                 totals.inputTokens(),
                 totals.outputTokens(),
@@ -186,6 +199,9 @@ public class UsageService {
                 .tenant(CurrentTenant.require())
                 .actor(OperatorContext.current().operatorId())
                 .resource("aiUsageTurn", turnId)
+                .detail("tenantId", CurrentTenant.require())
+                .detail("modelId", row.getModelId())
+                .detail("modelCalls", row.getModelCalls())
                 .detail("previousEstimatedTokens", old)
                 .detail("estimatedTokens", request.estimatedTokens())
                 .detail("reasonCode", request.reasonCode())

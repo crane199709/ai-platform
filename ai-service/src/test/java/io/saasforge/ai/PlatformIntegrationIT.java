@@ -234,6 +234,7 @@ class PlatformIntegrationIT {
                 .path("data")
                 .path("id")
                 .asText();
+        assertThat(usage(unreadyToken).path("quotaKnown").asBoolean()).isFalse();
         var pending = call(
                 platform.gateway(),
                 HttpMethod.POST,
@@ -297,6 +298,8 @@ class PlatformIntegrationIT {
         assertThat(sendMessage(id, "known", key, token)).contains("replayed");
         var known = usage(token);
         assertThat(known.path("planVersion").asLong()).isEqualTo(2);
+        assertThat(known.path("planId").asText()).isEqualTo(planId);
+        assertThat(known.path("planCode").asText()).isEqualTo(createPlan.get("code"));
         assertThat(known.path("inputTokens").asLong()).isEqualTo(9);
         assertThat(known.path("outputTokens").asLong()).isEqualTo(2);
         assertThat(known.path("cachedInputTokens").asLong()).isEqualTo(1);

@@ -1,3 +1,5 @@
 package io.saasforge.ai.usage.model;
 
-public record UsagePlan(long planVersion, Long tokenQuota) {}
+import java.util.UUID;
+
+public record UsagePlan(UUID planId, String planCode, long planVersion, Long tokenQuota) {}

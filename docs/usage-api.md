@@ -13,3 +13,5 @@
 平台运营查询 `GET /platform/tenants/{tenantId}/ai-usage?month=2026-11` 使用 `platform:tenant:read` 且受既有 tenant Data Policy 限制。响应含 `month,businessZone,received,inputTokens,outputTokens,cachedInputTokens,totalTokens,estimatedTokens,turnCount,toolCalls,unknownUsageTurns,days`。`received:false` 为尚未收到快照，不宣称确定为零。
 
 日累计事件 `AiUsageDailyReported` 通过现有 `forge-tenant` Topic 投递，字段为 tenantId,usageDate,businessZone,version,inputTokens,outputTokens,cachedInputTokens,turnCount,toolCalls,unknownUsageTurns,estimatedTokens,reportedAt。两仓 JSON 同契约；按 tenant/day 的持久 version 仅接受更新版本，每回合事务发布累计快照，覆盖停用前已提交用量，无需扫描停用租户。
+
+Plan 副本保留公开事件已有的 planId/planCode，并在较新版本 whole-snapshot 更新时与 quota 一起替换；旧/重复版本不能回退任何字段。UsageService.currentPlan() 供其他租户能力只读获取 Optional<UsagePlanSnapshot>；未收到可信事件时 empty，历史缺省身份字段为空且不合成新副本。HTTP响应附带 planId/planCode，既有页面字段保持兼容。工单11可按 planCode 查部署配置，缺省使用90天，不增加SDK字段。

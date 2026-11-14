@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="AiApplication (local)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="envFilePaths">
+      <option value="$PROJECT_DIR$/ai-service/.env.local" />
+    </option>
+    <module name="ai-service" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="io.saasforge.ai.AiApplication" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/ai-service" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

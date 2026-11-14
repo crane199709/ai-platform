@@ -1,6 +1,12 @@
 packages:
   - runner
   - ai-sub-app
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': false
+  '@google/genai': false
+  koffi: false
+  node-pty: false
+  protobufjs: false
 overrides:
   '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz
   '@crane199709/ui': file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz

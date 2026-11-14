@@ -3,8 +3,8 @@ import { once } from 'node:events'
 import { test } from 'node:test'
 import { createRunnerServer } from './server.ts'
 
-test('runner exposes liveness without exposing an agent or shell endpoint', async (t) => {
-  const server = createRunnerServer()
+test('only the AI service can call runtime endpoints; liveness stays public', async (t) => {
+  const server = createRunnerServer({ serviceToken: 'contract-service-token' })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   t.after(
@@ -16,9 +16,15 @@ test('runner exposes liveness without exposing an agent or shell endpoint', asyn
   const address = server.address()
   assert.ok(address && typeof address !== 'string')
   const base = `http://127.0.0.1:${address.port}`
-  const health = await fetch(`${base}/health`)
-  assert.equal(health.status, 200)
-  assert.deepEqual(await health.json(), { status: 'ok' })
-  const unavailable = await fetch(`${base}/sessions`, { method: 'POST' })
-  assert.equal(unavailable.status, 404)
+  assert.deepEqual(await (await fetch(`${base}/health`)).json(), { status: 'ok' })
+  assert.equal((await fetch(`${base}/v1/tenants/acme/sessions`, { method: 'POST' })).status, 401)
+  assert.equal(
+    (
+      await fetch(`${base}/v1/tenants/acme/shell`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer contract-service-token' },
+      })
+    ).status,
+    404,
+  )
 })

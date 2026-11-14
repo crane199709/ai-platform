@@ -40,9 +40,10 @@ final class PlatformEnvironment implements AutoCloseable {
     final String aiToken;
     private final List<Process> processes = new ArrayList<>();
     private ProcessBuilder iamLauncher;
+    // POP 检查点编码器按工作线程保留约 4 MiB 堆外缓冲；128 MiB 会使组合审计消费耗尽内存。
     private final GenericContainer<?> mq = new GenericContainer<>("apache/rocketmq:5.3.2")
             .withExposedPorts(8081)
-            .withEnv("JAVA_OPT_EXT", "-Xms128m -Xmx256m -Xmn64m -XX:MaxDirectMemorySize=128m")
+            .withEnv("JAVA_OPT_EXT", "-Xms128m -Xmx256m -Xmn64m -XX:MaxDirectMemorySize=512m")
             .withCopyToContainer(
                     Transferable.of("{\"rocketMQClusterName\":\"DefaultCluster\",\"useEndpointPortFromRequest\":true}"),
                     MQ_HOME + "/conf/rmq-proxy.json")

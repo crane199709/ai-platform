@@ -21,7 +21,7 @@
 
 - V7 迁移建立租户草稿、不可变发布版本和独立的平台预置表，全部带标准列与中文注释；租户表启用强制 RLS。草稿保存、发布、回滚锁定同一模板行。回滚只切换发布指针，不改草稿或旧版本。
 - 平台默认模板由迁移发布为 v1，租户可以读取/使用，不能修改、发布或回滚平台预置。租户自定义模板受 SDK 租户隔离。
-- 新增 read/update/publish/rollback 四项权限，ai-admin 角色包含这些权限。只有 use 权限的普通成员可读取发布选择项，不能读取草稿；草稿管理员仍没有发布/回滚权限。Manifest 版本为 5。
+- 新增 read/update/publish/rollback 四项权限，ai-admin 角色包含这些权限。只有 use 权限的普通成员可读取发布选择项，不能读取草稿；草稿管理员仍没有发布/回滚权限。Prompt 对齐时 Manifest 递增至 5，联合 Skill 合并后版本为 6。
 - 变量声明与占位符集合必须一致，拒绝非法名称、未闭合、重复声明、缺失/多余渲染值；预览无写入，变量值只做一次字面替换。含正文/变量值的模型覆写安全 toString。
 - 发布/回滚使用真实 AuditLog → Outbox → RocketMQ → IAM 链路，只记录模板 ID、租户、操作人等元数据，detail 为 {}，不写名称、正文、变量值或密钥。
 - 公开接口为 `prompt.service.PromptService.resolvePublished(UUID, Integer, Map<String,String>)`，返回 `ResolvedPromptResponse(templateId, version, content)`；templateId 为 null 时选默认预置，version 为 null 时选当前发布版本。HTTP 管理、预览、默认渲染、只含元数据的发布选择列表见 [Prompt 管理契约](../../../docs/prompt-management.md)。
@@ -46,3 +46,12 @@ TDD 在已确认的 Java HTTP / PostgreSQL / 真实 IAM 权限与审计接缝进
 - 真实权限场景覆盖仅草稿编辑权限可创建、保存和预览，但不能发布/回滚；只有 use 权限的成员对创建、保存、预览均被拒绝。本轮完整组合首次复验 11/12 通过，Prompt 全部场景通过，模型审计超时；`/private/tmp/ai-prompt-combined-first.log`。
 - `AI_MAVEN_OFFLINE=true MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh service` 通过全部常规测试及架构、注释、格式、权限目录检查；日志 `/private/tmp/ai-prompt-update-service.log`。
 - 模型单方法与租户审计→模型两方法真实复验分别 1/1、2/2 通过。原完整 12 项再次复验时 Prompt 审计也出现缺失；隔离 Broker `pop.log` 已捕获 `OutOfDirectMemoryError`：堆外内存使用 131727360、上限 134217728，POP checkpoint 申请 4259840 字节失败，伴随 Proxy 超时。Outbox 均已发送，IAM 对应去重/死信记录不存在。证据 `/private/tmp/ai-prompt-combined-probe-evidence/`，尚待调整测试资源后验证因果，不能据此宣称组合验收通过。
+
+
+### 2026-11-14 Model / Prompt / Skill 联合验收完成
+
+- 已顺序合入工单 07、Prompt 权限对齐 `7801400` 与工单 08 `57f09d9`；联合合并提交 `8a5f484`，Manifest 为 6。原有 Model、Prompt 与新增 Skill 的全部 15 项真实 IT 保留。
+- 审计超时根因经原 12 项红灯、Broker POP 堆外 OOM 证据和修改后的联合绿灯验证：测试 MQ 的 128 MiB 堆外内存上限不足，POP checkpoint 编码器按线程分配约 4 MiB 缓冲失败，Proxy 随之超时。只将夹具 `MaxDirectMemorySize` 提升至 512 MiB，没有修改平台/SDK、审计超时、权限或事件断言。
+- `AI_MAVEN_OFFLINE=true AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh platform`：**15/15 通过，0 跳过**，包含 Model Platform 审计、Prompt Tenant 发布/回滚、Skill 两个 Realm 的审计以及独立 update/publish/rollback 权限。日志 `/private/tmp/ai-prompt-skill-platform-direct512.log`；制品校验摘要、平台与 Broker 日志 `/private/tmp/ai-prompt-skill-direct512-evidence/`。采样中没有 OOM、POP message error 或 Proxy timeout。
+- `AI_MAVEN_OFFLINE=true MAVEN_ARGS=-DforkCount=1 bash scripts/check.sh service`：**9/9 通过**，架构、迁移/SDK 注释、格式、权限目录门禁通过；日志 `/private/tmp/ai-prompt-skill-service-final.log`。`git diff --check` 通过。
+- 已移除临时 IAM PID/退出方式探针。历史 `forge-tenant` 40402 启动错误未在本次最小、二方法与联合复验中重现，未据此增改 readiness；本轮未执行排除本机缓存的已发布 SDK 下载验收。

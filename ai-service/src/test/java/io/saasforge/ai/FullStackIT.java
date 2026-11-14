@@ -293,6 +293,8 @@ class FullStackIT {
                     .atMost(Duration.ofSeconds(45))
                     .ignoreExceptions()
                     .until(() -> HttpClient.newBuilder()
+                                    // Vite preview 不处理 JDK 默认的 h2c 升级；与浏览器的本地 HTTP/1.1 一致。
+                                    .version(HttpClient.Version.HTTP_1_1)
                                     .connectTimeout(Duration.ofSeconds(2))
                                     .build()
                                     .send(

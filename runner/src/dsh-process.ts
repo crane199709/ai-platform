@@ -2,13 +2,12 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { RuntimeError } from './runtime.ts'
+import { RuntimeError, type SkillSnapshot } from './runtime.ts'
 
 export const DSH_VERSION = '0.2.2-rc.1'
 export const DSH_PROFILE = 'sdk'
 
-// Every model-facing native tool in the pinned sdk composition is disabled.
-// The only tool ingress is our explicitly mounted AI-service MCP bridge.
+// Native execution tools remain disabled; only declared proxy tools and reviewed Skill loading are enabled.
 const disabled = [
   'tool-plugin-manager',
   'tool-working-directory',
@@ -67,6 +66,7 @@ export class DshProcess {
     cpuSeconds: number
     hasTools: boolean
     instructions?: string
+    skills: SkillSnapshot[]
   }
   constructor(options: DshProcess['options']) {
     this.options = options
@@ -78,11 +78,35 @@ export class DshProcess {
     const { home, workspace, proxyUrl, model, memoryMb, cpuSeconds } = this.options
     await mkdir(home, { recursive: true, mode: 0o700 })
     await mkdir(workspace, { recursive: true, mode: 0o700 })
+    const skillRoot = join(home, 'skills')
+    for (const skill of this.options.skills) {
+      const directory = join(skillRoot, skill.code)
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      await writeFile(
+        join(directory, 'SKILL.md'),
+        `---\nname: ${JSON.stringify(skill.code)}\ndescription: ${JSON.stringify(skill.description)}\n---\n\n${skill.content}\n`,
+        { mode: 0o600, flag: 'wx' },
+      )
+    }
     const patch = join(home, 'runner.patch.json')
     await writeFile(
       patch,
       JSON.stringify([
-        ...disabled.map((id) => ({ id, disabled: true })),
+        ...disabled
+          .filter(
+            (id) => !this.options.skills.length || !['skill-filesystem', 'tool-skill'].includes(id),
+          )
+          .map((id) => ({ id, disabled: true })),
+        ...(this.options.skills.length
+          ? [
+              {
+                id: 'skill-filesystem',
+                disabled: false,
+                config: { includeDefaultRoots: false, customSkillDirs: [skillRoot], watch: false },
+              },
+              { id: 'tool-skill', disabled: false },
+            ]
+          : []),
         ...(this.options.instructions
           ? [{ id: 'system-prompt', config: { personaPrefix: this.options.instructions } }]
           : []),

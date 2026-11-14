@@ -15,20 +15,24 @@ class PlatformSnapshotContractTest {
     @Test
     void aiManifestUsesItsOwnPermissionsAndSubApp() throws Exception {
         var manifest = ResourceManifestCollector.collect(
-                "ai-service", "5", "io.saasforge.ai", getClass().getClassLoader());
+                "ai-service", "6", "io.saasforge.ai", getClass().getClassLoader());
         Files.writeString(
                 Path.of("target/resource-manifest.json"),
                 JsonMapper.builder().build().writeValueAsString(manifest));
         // Sub-App 规范独立要求草稿使用 update，发布与回滚分别授权。
         assertThat(manifest.permissions())
                 .extracting(permission -> permission.code())
-                .containsExactly(
+                .containsExactlyInAnyOrder(
                         "ai:configuration:manage",
                         "ai:conversation:use",
-                        "ai:prompt:publish",
+                        "ai:skill:read",
+                        "ai:skill:update",
+                        "ai:skill:publish",
+                        "ai:skill:rollback",
                         "ai:prompt:read",
-                        "ai:prompt:rollback",
-                        "ai:prompt:update");
+                        "ai:prompt:update",
+                        "ai:prompt:publish",
+                        "ai:prompt:rollback");
         assertThat(manifest.menus()).singleElement().satisfies(menu -> {
             assertThat(menu.app()).isEqualTo("ai");
             assertThat(menu.path()).isEqualTo("home");
@@ -39,6 +43,10 @@ class PlatformSnapshotContractTest {
                 .containsExactlyInAnyOrder(
                         "ai:conversation:use",
                         "ai:configuration:manage",
+                        "ai:skill:read",
+                        "ai:skill:update",
+                        "ai:skill:publish",
+                        "ai:skill:rollback",
                         "ai:prompt:read",
                         "ai:prompt:publish",
                         "ai:prompt:rollback",

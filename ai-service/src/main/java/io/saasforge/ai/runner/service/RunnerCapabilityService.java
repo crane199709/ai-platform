@@ -4,6 +4,7 @@ import io.saasforge.sdk.core.MembershipGrants;
 import io.saasforge.sdk.core.MembershipStateKeys;
 import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.security.TenantContext;
+import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -28,6 +29,14 @@ public class RunnerCapabilityService {
 
     public RunnerCapabilityService(StringRedisTemplate redis) {
         this.redis = redis;
+    }
+
+    /** 读取精确安全链已绑定的上下文；实际转发仍须重新调用 authorize。 */
+    public static GrantedContext requestContext(HttpServletRequest request) {
+        if (request.getAttribute(REQUEST_ATTRIBUTE) instanceof GrantedContext context) {
+            return context;
+        }
+        throw new ForgeException(RunnerErrorCode.INVALID_CAPABILITY);
     }
 
     public String issue(UUID sessionId, UUID turnId, UUID modelId, Set<String> scopes) {

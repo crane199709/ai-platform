@@ -168,7 +168,13 @@ test('real DSH preserves distinct short aliases within the final provider functi
   })
   assert.equal(created.status, 201, await created.text())
   const stream = await call('/sessions/safe-aliases/messages', 'POST', { text: 'lookup', contextToken: 'short-lived-context' })
-  assert.match(await stream.text(), /event: completed/)
+  const events = await stream.text()
+  assert.match(events, /event: completed/)
+  const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({ type: match[1], data: JSON.parse(match[2]) }))
+  const called = frames.find((frame) => frame.type === 'tool.call')!
+  const result = frames.find((frame) => frame.type === 'tool.result')!
+  assert.equal(result.data.callId, called.data.callId)
+  assert.equal(result.data.name, `mcp__ai_service__${aliases[0]}`)
   const names = (requests[0].tools as { function: { name: string } }[]).map((tool) => tool.function.name)
   assert.deepEqual(names, aliases.map((name) => `mcp__ai_service__${name}`))
   assert.equal(new Set(names).size, 2)
@@ -655,6 +661,13 @@ test(
     })
     const events = await stream.text()
     assert.match(events, /event: completed/)
+    const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({ type: match[1], data: JSON.parse(match[2]) }))
+    const called = frames.find((frame) => frame.type === 'tool.call')!
+    const result = frames.find((frame) => frame.type === 'tool.result')!
+    assert.equal(called.data.name, 'skill')
+    assert.equal(result.data.callId, called.data.callId)
+    assert.equal(result.data.name, 'skill')
+    assert.equal(result.data.isError, false)
     assert.deepEqual(
       (requests[0].tools as any[]).map((tool) => tool.function.name),
       ['skill'],

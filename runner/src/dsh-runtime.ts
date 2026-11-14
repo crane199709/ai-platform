@@ -418,7 +418,15 @@ export class DshRuntime implements AgentRuntime {
           ? { name: turn.toolNames.get(data.message.toolCallId) }
           : {}),
       })
-      turn.emit({ type: 'tool.result', data: { content, isError: data.message?.isError === true } })
+      turn.emit({
+        type: 'tool.result',
+        data: {
+          callId: data.message?.toolCallId,
+          name: turn.toolNames.get(data.message?.toolCallId),
+          content,
+          isError: data.message?.isError === true,
+        },
+      })
     } else if (event?.type === 'turn/end') {
       turn.finish(
         data.reason?.kind === 'error'

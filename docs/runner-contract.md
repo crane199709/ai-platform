@@ -30,7 +30,7 @@ Runner 禁用 JSONL 持久化及其投影缓存，只保存运行期内存状态
 | started     | `{ "sessionId": "..." }`                                                                                                                         |
 | delta       | `{ "text": "分片" }`                                                                                                                             |
 | tool.call   | `{ "name": "mcp__ai_service__lookup", "callId": "...", "arguments": "JSON字符串" }`                                                              |
-| tool.result | `{ "content": "工具结果文本", "isError": false }`                                                                                                |
+| tool.result | `{ "callId": "...", "name": "mcp__ai_service__lookup", "content": "工具结果文本", "isError": false }`                                                                                                |
 | completed   | `{ "sessionId", "model", "transcript": [...], "usage": { "inputTokens": 7, "outputTokens": 2, "cachedInputTokens": 0 }, "usageReported": true }` |
 | cancelled   | `{ "sessionId": "..." }`                                                                                                                         |
 | error       | `{ "code": "runner.*", "retryable": true/false }`                                                                                                |
@@ -113,3 +113,5 @@ JSON 错误体是 `{ "code": "runner.*", "retryable": false/true }`。SSE 开始
 | 504  | runner.runtimeTimeout                                                                              | 回合或 SDK 握手超时；进程已清理，可从 transcript 恢复 |
 
 真实进程契约入口为 `bash scripts/check.sh runner`，使用本地 OpenAI-compatible Provider 和 Tool Proxy，不读取真实密钥，不产生计费请求。覆盖初始化、流式分批、只读工具、取消、全新 Runner 恢复、动态模型切换、已发布 Prompt 到达系统上下文、导出、SIGKILL、模型/工具失败、超时、并发准入、跨租户隔离、池满与空闲回收。
+
+工具结果关联来自固定上游公开 `ToolResultMessage.toolCallId`，与对应 `tool.call.callId` 完全相同；`name` 由同回合已观测调用映射取得。Java/UI 可按 callId 关联并行结果，不能按到达顺序猜测。本地官方 Skill 调用同样携带 name=`skill` 与 callId；已启用 Skill 的调用及最终结果由 Java 写元数据审计，MCP 调用仅在授权 Tool Proxy 写审计，避免重复。

@@ -7,6 +7,22 @@
     "ai:conversation:use": {
       "name": "使用 AI 助手",
       "group": "AI 工作台"
+    },
+    "ai:prompt:read": {
+      "name": "读取 Prompt",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:manage": {
+      "name": "管理 Prompt 草稿",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:publish": {
+      "name": "发布 Prompt",
+      "group": "AI 工作台"
+    },
+    "ai:prompt:rollback": {
+      "name": "回滚 Prompt",
+      "group": "AI 工作台"
     }
   },
   "menus": [
@@ -20,11 +36,24 @@
     }
   ],
   "roles": [
-    { "code": "ai-user", "name": "AI 使用者", "permissions": ["ai:conversation:use"] },
+    {
+      "code": "ai-user",
+      "name": "AI 使用者",
+      "permissions": [
+        "ai:conversation:use"
+      ]
+    },
     {
       "code": "ai-admin",
       "name": "AI 管理员",
-      "permissions": ["ai:conversation:use", "ai:configuration:manage"]
+      "permissions": [
+        "ai:conversation:use",
+        "ai:configuration:manage",
+        "ai:prompt:read",
+        "ai:prompt:manage",
+        "ai:prompt:publish",
+        "ai:prompt:rollback"
+      ]
     }
   ]
 }

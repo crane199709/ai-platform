@@ -15,13 +15,19 @@ class PlatformSnapshotContractTest {
     @Test
     void aiManifestUsesItsOwnPermissionsAndSubApp() throws Exception {
         var manifest = ResourceManifestCollector.collect(
-                "ai-service", "2", "io.saasforge.ai", getClass().getClassLoader());
+                "ai-service", "3", "io.saasforge.ai", getClass().getClassLoader());
         Files.writeString(
                 Path.of("target/resource-manifest.json"),
                 JsonMapper.builder().build().writeValueAsString(manifest));
         assertThat(manifest.permissions())
                 .extracting(permission -> permission.code())
-                .containsExactly("ai:configuration:manage", "ai:conversation:use");
+                .containsExactly(
+                        "ai:configuration:manage",
+                        "ai:conversation:use",
+                        "ai:prompt:manage",
+                        "ai:prompt:publish",
+                        "ai:prompt:read",
+                        "ai:prompt:rollback");
         assertThat(manifest.menus()).singleElement().satisfies(menu -> {
             assertThat(menu.app()).isEqualTo("ai");
             assertThat(menu.path()).isEqualTo("home");
@@ -29,7 +35,13 @@ class PlatformSnapshotContractTest {
         assertThat(manifest.roles()).extracting(role -> role.code()).containsExactly("ai-user", "ai-admin");
         assertThat(manifest.roles().get(0).permissions()).containsExactly("ai:conversation:use");
         assertThat(manifest.roles().get(1).permissions())
-                .containsExactlyInAnyOrder("ai:conversation:use", "ai:configuration:manage");
+                .containsExactlyInAnyOrder(
+                        "ai:conversation:use",
+                        "ai:configuration:manage",
+                        "ai:prompt:read",
+                        "ai:prompt:manage",
+                        "ai:prompt:publish",
+                        "ai:prompt:rollback");
     }
 
     @Test

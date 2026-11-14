@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Prompt 模板与版本表：模板、版本、内容、变量、状态、发布人/时间
 - [ ] 草稿保存、发布、历史、回滚；发布写审计

@@ -15,7 +15,8 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
     for await (const chunk of req) body += chunk
     proxyRequests.push({ path: req.url, headers: { ...req.headers }, body: JSON.parse(body) })
     if (req.url === '/tools/call') {
-      if (scenario === 'tool-approval-wait') await new Promise((resolve) => setTimeout(resolve, 17000))
+      if (scenario === 'tool-approval-wait')
+        await new Promise((resolve) => setTimeout(resolve, 17000))
       if (scenario === 'tool-failure') {
         res.writeHead(503).end('never-echo-upstream-secret')
         return
@@ -160,45 +161,137 @@ test(
   },
 )
 
-test('real DSH preserves distinct short aliases within the final provider function-name limit', { timeout: 30000 }, async (t) => {
-  const { call, requests, proxyRequests } = await fixture(t, 'tool-alias')
-  const aliases = ['m0123456789abcdef0123456789abcdef', 'mfedcba9876543210fedcba9876543210']
-  const created = await call('/sessions', 'POST', {
-    sessionId: 'safe-aliases', model: 'test-model',
-    tools: aliases.map((name) => ({ name, description: 'Reviewed read-only tool', inputSchema: { type: 'object' }, readOnly: true })),
-  })
-  assert.equal(created.status, 201, await created.text())
-  const stream = await call('/sessions/safe-aliases/messages', 'POST', { text: 'lookup', contextToken: 'short-lived-context' })
-  const events = await stream.text()
-  assert.match(events, /event: completed/)
-  const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({ type: match[1], data: JSON.parse(match[2]) }))
-  const called = frames.find((frame) => frame.type === 'tool.call')!
-  const result = frames.find((frame) => frame.type === 'tool.result')!
-  assert.equal(result.data.callId, called.data.callId)
-  assert.equal(result.data.name, `mcp__ai_service__${aliases[0]}`)
-  const names = (requests[0].tools as { function: { name: string } }[]).map((tool) => tool.function.name)
-  assert.deepEqual(names, aliases.map((name) => `mcp__ai_service__${name}`))
-  assert.equal(new Set(names).size, 2)
-  for (const name of names) {
-    assert.match(name, /^[A-Za-z0-9_-]+$/)
-    assert.ok(name.length <= 64, name)
-  }
-  assert.deepEqual(proxyRequests.find((request) => request.path === '/tools/call')?.body,
-    { name: aliases[0], arguments: { query: 'status' } })
-})
+test(
+  'real DSH preserves distinct short aliases within the final provider function-name limit',
+  { timeout: 30000 },
+  async (t) => {
+    const { call, requests, proxyRequests } = await fixture(t, 'tool-alias')
+    const aliases = ['m0123456789abcdef0123456789abcdef', 'mfedcba9876543210fedcba9876543210']
+    const created = await call('/sessions', 'POST', {
+      sessionId: 'safe-aliases',
+      model: 'test-model',
+      tools: aliases.map((name) => ({
+        name,
+        description: 'Reviewed read-only tool',
+        inputSchema: { type: 'object' },
+        readOnly: true,
+      })),
+    })
+    assert.equal(created.status, 201, await created.text())
+    const stream = await call('/sessions/safe-aliases/messages', 'POST', {
+      text: 'lookup',
+      contextToken: 'short-lived-context',
+    })
+    const events = await stream.text()
+    assert.match(events, /event: completed/)
+    const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({
+      type: match[1],
+      data: JSON.parse(match[2]),
+    }))
+    const called = frames.find((frame) => frame.type === 'tool.call')!
+    const result = frames.find((frame) => frame.type === 'tool.result')!
+    assert.equal(result.data.callId, called.data.callId)
+    assert.equal(result.data.name, `mcp__ai_service__${aliases[0]}`)
+    const names = (requests[0].tools as { function: { name: string } }[]).map(
+      (tool) => tool.function.name,
+    )
+    assert.deepEqual(
+      names,
+      aliases.map((name) => `mcp__ai_service__${name}`),
+    )
+    assert.equal(new Set(names).size, 2)
+    for (const name of names) {
+      assert.match(name, /^[A-Za-z0-9_-]+$/)
+      assert.ok(name.length <= 64, name)
+    }
+    assert.deepEqual(proxyRequests.find((request) => request.path === '/tools/call')?.body, {
+      name: aliases[0],
+      arguments: { query: 'status' },
+    })
+  },
+)
 
-test('real DSH keeps a tool request alive while Java waits for a user decision', { timeout: 30000 }, async (t) => {
-  const { call } = await fixture(t, 'tool-approval-wait')
-  const created = await call('/sessions', 'POST', { sessionId: 'approval-wait', model: 'test-model',
-    tools: [{ name: 'lookup', description: 'Reviewed sensitive read-only lookup', inputSchema: { type: 'object' }, readOnly: true }],
-  })
-  assert.equal(created.status, 201, await created.text())
-  const stream = await call('/sessions/approval-wait/messages', 'POST', { text: 'lookup after approval', contextToken: 'short-lived-context' })
-  const events = await stream.text()
-  assert.match(events, /event: completed/)
-  assert.match(events, /status: healthy/)
-  assert.doesNotMatch(events, /runner.runtimeTimeout/)
-})
+test(
+  'real DSH keeps a tool request alive while Java waits for a user decision',
+  { timeout: 30000 },
+  async (t) => {
+    const { call } = await fixture(t, 'tool-approval-wait')
+    const created = await call('/sessions', 'POST', {
+      sessionId: 'approval-wait',
+      model: 'test-model',
+      tools: [
+        {
+          name: 'lookup',
+          description: 'Reviewed sensitive read-only lookup',
+          inputSchema: { type: 'object' },
+          readOnly: true,
+        },
+      ],
+    })
+    assert.equal(created.status, 201, await created.text())
+    const stream = await call('/sessions/approval-wait/messages', 'POST', {
+      text: 'lookup after approval',
+      contextToken: 'short-lived-context',
+    })
+    const events = await stream.text()
+    assert.match(events, /event: completed/)
+    assert.match(events, /status: healthy/)
+    assert.doesNotMatch(events, /runner.runtimeTimeout/)
+  },
+)
+
+test(
+  'real DSH refreshes tools on an existing session after Java revokes access',
+  { timeout: 30000 },
+  async (t) => {
+    const { call, requests } = await fixture(t)
+    const tool = {
+      name: 'lookup',
+      description: 'Reviewed lookup',
+      inputSchema: { type: 'object' },
+      readOnly: true,
+    }
+    assert.equal(
+      (
+        await call('/sessions', 'POST', {
+          sessionId: 'tool-refresh',
+          model: 'test-model',
+          tools: [tool],
+        })
+      ).status,
+      201,
+    )
+    assert.match(
+      await (
+        await call('/sessions/tool-refresh/messages', 'POST', {
+          text: 'first context',
+          contextToken: 'first-capability',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    const next = await call('/sessions/tool-refresh/messages', 'POST', {
+      text: 'second context',
+      contextToken: 'second-capability',
+      tools: [],
+    })
+    assert.equal(next.status, 200, await next.clone().text())
+    assert.match(await next.text(), /event: completed/)
+    assert.deepEqual(
+      (requests[0].tools as any[]).map((tool) => tool.function.name),
+      ['mcp__ai_service__lookup'],
+    )
+    assert.deepEqual(requests[1].tools ?? [], [])
+    assert.match(JSON.stringify(requests[1].messages), /first context/)
+    const unsafe = await call('/sessions/tool-refresh/messages', 'POST', {
+      text: 'unsafe',
+      contextToken: 'third-capability',
+      tools: [{ ...tool, readOnly: false }],
+    })
+    assert.equal(unsafe.status, 400)
+    assert.equal(requests.length, 2)
+  },
+)
 
 test(
   'a full pool returns 429 with Retry-After without starting another tenant',
@@ -675,7 +768,10 @@ test(
     })
     const events = await stream.text()
     assert.match(events, /event: completed/)
-    const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({ type: match[1], data: JSON.parse(match[2]) }))
+    const frames = [...events.matchAll(/event: ([^\n]+)\ndata: ([^\n]+)/g)].map((match) => ({
+      type: match[1],
+      data: JSON.parse(match[2]),
+    }))
     const called = frames.find((frame) => frame.type === 'tool.call')!
     const result = frames.find((frame) => frame.type === 'tool.result')!
     assert.equal(called.data.name, 'skill')

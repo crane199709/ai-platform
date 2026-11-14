@@ -32,6 +32,7 @@ export interface SessionInput {
   skills?: SkillSnapshot[]
 }
 export interface MessageInput {
+  tools?: ReadOnlyTool[]
   text: string
   contextToken: string
   model?: string

@@ -12,7 +12,7 @@
       "name": "读取 Prompt",
       "group": "AI 工作台"
     },
-    "ai:prompt:manage": {
+    "ai:prompt:update": {
       "name": "管理 Prompt 草稿",
       "group": "AI 工作台"
     },
@@ -50,7 +50,7 @@
         "ai:conversation:use",
         "ai:configuration:manage",
         "ai:prompt:read",
-        "ai:prompt:manage",
+        "ai:prompt:update",
         "ai:prompt:publish",
         "ai:prompt:rollback"
       ]

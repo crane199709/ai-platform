@@ -19,7 +19,7 @@ INSERT INTO membership_role (membership_id, role_id) VALUES
 ('019a2525-0000-7000-8000-000000000032', '019a2525-0000-7000-8000-000000000042');
 INSERT INTO role_permission (role_id, permission_id)
 SELECT r.id, p.id FROM role r CROSS JOIN permission p
-WHERE r.code = 'ai-verification' AND p.code IN ('ai:conversation:use', 'ai:configuration:manage', 'iam:audit:read', 'ai:prompt:read', 'ai:prompt:manage', 'ai:prompt:publish', 'ai:prompt:rollback') AND NOT p.deleted;
+WHERE r.code = 'ai-verification' AND p.code IN ('ai:conversation:use', 'ai:configuration:manage', 'iam:audit:read', 'ai:prompt:read', 'ai:prompt:update', 'ai:prompt:publish', 'ai:prompt:rollback') AND NOT p.deleted;
 INSERT INTO operator (id, account, display_name, password_hash)
 VALUES ('019a2525-0000-7000-8000-000000000071', 'ai-operator', 'AI 接入验收',
 '$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
@@ -66,4 +66,4 @@ INSERT INTO membership_role (membership_id, role_id) VALUES
 ('019a2525-0700-7000-8000-000000000031', '019a2525-0700-7000-8000-000000000041');
 INSERT INTO role_permission (role_id, permission_id)
 SELECT '019a2525-0700-7000-8000-000000000041', id FROM permission
-WHERE code IN ('ai:conversation:use', 'ai:prompt:read', 'ai:prompt:manage') AND NOT deleted;
+WHERE code IN ('ai:conversation:use', 'ai:prompt:read', 'ai:prompt:update') AND NOT deleted;

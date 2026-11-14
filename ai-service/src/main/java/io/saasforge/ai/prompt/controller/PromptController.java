@@ -40,7 +40,7 @@ public class PromptController {
     @Operation(summary = "创建当前租户的 Prompt 草稿")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @RequiresPermission("ai:prompt:manage")
+    @RequiresPermission("ai:prompt:update")
     public ApiResponse<PromptResponse> create(@Valid @RequestBody SavePromptRequest request) {
         return ApiResponse.created(prompts.create(request));
     }
@@ -54,7 +54,7 @@ public class PromptController {
 
     @Operation(summary = "保存 Prompt 草稿，不修改发布版本")
     @PutMapping("/{id}/draft")
-    @RequiresPermission("ai:prompt:manage")
+    @RequiresPermission("ai:prompt:update")
     public ApiResponse<PromptResponse> saveDraft(@PathVariable UUID id, @Valid @RequestBody SavePromptRequest request) {
         return ApiResponse.ok(prompts.saveDraft(id, request));
     }
@@ -92,7 +92,7 @@ public class PromptController {
 
     @Operation(summary = "校验并预览 Prompt，不保存或发布")
     @PostMapping("/preview")
-    @RequiresPermission("ai:prompt:manage")
+    @RequiresPermission("ai:prompt:update")
     public ApiResponse<PreviewPromptResponse> preview(@Valid @RequestBody PreviewPromptRequest request) {
         return ApiResponse.ok(prompts.preview(request));
     }

@@ -173,7 +173,9 @@ class PlatformIntegrationIT {
                         operator,
                         null,
                         200);
-                assertThat(events.path("data")).hasSize(1);
+                assertThat(events.path("data"))
+                        .as("Platform audit action=%s resourceId=%s", action, id)
+                        .hasSize(1);
                 var event = events.path("data").get(0);
                 assertThat(event.path("actorId").asText()).isEqualTo("019a2525-0000-7000-8000-000000000071");
                 assertThat(event.path("outcome").asText()).isEqualTo("success");
@@ -761,6 +763,12 @@ class PlatformIntegrationIT {
                 Map.of("name", "编辑者草稿", "content", "仍未发布 {{name}}", "variables", List.of("name")),
                 200);
         assertThat(renderPrompt(id, null)).isEqualTo("发布内容 小明");
+        var preview = Map.of("content", "{{name}}", "variables", List.of("name"), "values", Map.of("name", "预览"));
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/preview", editor, preview, 200);
+        var draft = Map.of("name", "无草稿权限", "content", "{{name}}", "variables", List.of("name"));
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts", readOnlyMember, draft, 403);
+        call(platform.gateway(), HttpMethod.PUT, "/ai/prompts/" + id + "/draft", readOnlyMember, draft, 403);
+        call(platform.gateway(), HttpMethod.POST, "/ai/prompts/preview", readOnlyMember, preview, 403);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenWithoutPermission, null, 403);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id, tokenB, null, 404);
         call(platform.gateway(), HttpMethod.GET, "/ai/prompts/" + id + "/versions", tokenB, null, 404);

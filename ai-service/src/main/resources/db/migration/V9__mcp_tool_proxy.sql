@@ -119,3 +119,39 @@ CREATE POLICY ai_tenant_mcp_version_tenant ON ai_tenant_mcp_version
 CREATE UNIQUE INDEX ai_mcp_catalog_version_number ON ai_mcp_catalog_version (catalog_id, version) WHERE NOT deleted;
 CREATE UNIQUE INDEX ai_tenant_mcp_catalog_key ON ai_tenant_mcp (tenant_id,catalog_id) WHERE NOT deleted;
 CREATE UNIQUE INDEX ai_tenant_mcp_version_number ON ai_tenant_mcp_version (tenant_id,configuration_id,version) WHERE NOT deleted;
+CREATE TABLE ai_mcp_tool_grant (
+ id uuid PRIMARY KEY,
+ tenant_id uuid NOT NULL,
+ catalog_id uuid NOT NULL REFERENCES ai_mcp_catalog(id),
+ tenant_version integer NOT NULL,
+ catalog_version integer NOT NULL,
+ runtime_name varchar(33) NOT NULL,
+ tool_name varchar(128) NOT NULL,
+ owner_id uuid NOT NULL,
+ created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ created_by uuid,
+ updated_by uuid,
+ deleted boolean NOT NULL DEFAULT false
+);
+COMMENT ON TABLE ai_mcp_tool_grant IS '已发布 MCP 工具资源，IAM Data Policy 保护工具访问范围';
+COMMENT ON COLUMN ai_mcp_tool_grant.id IS '工具授权主键 UUIDv7';
+COMMENT ON COLUMN ai_mcp_tool_grant.tenant_id IS '所属租户 ID';
+COMMENT ON COLUMN ai_mcp_tool_grant.catalog_id IS '平台 MCP 目录 ID';
+COMMENT ON COLUMN ai_mcp_tool_grant.tenant_version IS '所属租户配置发布版本';
+COMMENT ON COLUMN ai_mcp_tool_grant.tool_name IS '审核工具原始名称';
+COMMENT ON COLUMN ai_mcp_tool_grant.owner_id IS '发布者 Membership，数据权限归属';
+COMMENT ON COLUMN ai_mcp_tool_grant.created_at IS '创建时间';
+COMMENT ON COLUMN ai_mcp_tool_grant.updated_at IS '更新时间';
+COMMENT ON COLUMN ai_mcp_tool_grant.created_by IS '创建身份';
+COMMENT ON COLUMN ai_mcp_tool_grant.updated_by IS '更新身份';
+COMMENT ON COLUMN ai_mcp_tool_grant.deleted IS '是否逻辑删除';
+CREATE UNIQUE INDEX ai_mcp_tool_grant_version ON ai_mcp_tool_grant(tenant_id,catalog_id,tenant_version,tool_name) WHERE NOT deleted;
+ALTER TABLE ai_mcp_tool_grant ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_mcp_tool_grant FORCE ROW LEVEL SECURITY;
+CREATE POLICY ai_mcp_tool_grant_tenant ON ai_mcp_tool_grant
+ USING (tenant_id = CAST(NULLIF(current_setting('app.tenant_id', true), '') AS uuid))
+ WITH CHECK (tenant_id = CAST(NULLIF(current_setting('app.tenant_id', true), '') AS uuid));
+COMMENT ON COLUMN ai_mcp_tool_grant.catalog_version IS '审核目录版本快照';
+COMMENT ON COLUMN ai_mcp_tool_grant.runtime_name IS '固定短别名，保留 DSH 前缀后的提供方命名预算';
+CREATE UNIQUE INDEX ai_mcp_tool_grant_runtime_name ON ai_mcp_tool_grant(tenant_id,runtime_name) WHERE NOT deleted;

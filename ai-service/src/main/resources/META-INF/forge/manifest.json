@@ -96,5 +96,32 @@
         "ai:mcp:rollback"
       ]
     }
+  ],
+  "dataResources": [
+    {
+      "code": "ai_mcp_tool",
+      "name": "AI MCP 只读工具",
+      "table": "ai_mcp_tool_grant",
+      "attributes": [
+        {
+          "code": "ownerId",
+          "name": "发布成员",
+          "type": "uuid",
+          "column": "owner_id"
+        },
+        {
+          "code": "catalogId",
+          "name": "MCP目录",
+          "type": "uuid",
+          "column": "catalog_id"
+        },
+        {
+          "code": "toolName",
+          "name": "工具名称",
+          "type": "string",
+          "column": "tool_name"
+        }
+      ]
+    }
   ]
 }

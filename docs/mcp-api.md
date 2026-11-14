@@ -33,7 +33,7 @@
 }
 ```
 
-v1 最多 32 个显式审核工具，原始名称最长 16 字符。只接受 HTTPS 地址，无 userinfo、query、fragment；不接收 stdio、shell 命令、动态地址、原始 Key。`readOnly:true` 必须由 Operator 审核，权限码必须为 `:read`。运行期不根据上游 `readOnlyHint` 或 discovery 自动新增工具。配置声明不能证明远端实现只读，运营必须核对实际工具行为与隔离合同。
+v1 最多 32 个显式审核工具，原始名称最长 128 字符。只接受 HTTPS 地址，无 userinfo、query、fragment；不接收 stdio、shell 命令、动态地址、原始 Key。`readOnly:true` 必须由 Operator 审核，权限码必须为 `:read`。运行期不根据上游 `readOnlyHint` 或 discovery 自动新增工具。配置声明不能证明远端实现只读，运营必须核对实际工具行为与隔离合同。
 
 凭据与隔离模式必须成对匹配：
 
@@ -65,3 +65,5 @@ v1 最多 32 个显式审核工具，原始名称最长 16 字符。只接受 HT
 这一 Data Policy 控制哪些已启用工具可被使用。业务记录的行级范围由受信 Business MCP/原 API 再以同一身份检查；外部 MCP 只支持已审核公共数据或租户凭据隔离范围，不能把未知上游的成员行级权限宣称为已校验。
 
 每次调用重新校验当前 IAM 授权、能力绑定和有效期、目录/租户启用状态、工具白名单和只读属性。调用审计只记录固定动作、资源 ID、成功/失败元数据，不记录参数、结果原文、JWT、能力 Token 或 MCP 凭据。
+
+运行别名为 `m` + SHA-256(目录ID/审核版本/租户版本/完整原生名) 的前 32 个十六进制字符，持久化唯一索引碰撞时拒绝发布。原生名称完整保留；既不截断原名，也不通过短名猜测路由。DSH 的 `mcp__ai_service__` 前缀加入后总长 49，满足较严格的 64 字符兼容预算。命名依据：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)（64）、[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)（128）；实际 DSH 契约同时断言最终工具名格式、长度与不同别名无碰撞。

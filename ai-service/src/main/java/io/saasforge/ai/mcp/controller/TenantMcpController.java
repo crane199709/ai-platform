@@ -1,20 +1,38 @@
 package io.saasforge.ai.mcp.controller;
 
-import io.saasforge.ai.mcp.model.*;
+import io.saasforge.ai.mcp.model.McpCatalogOptionResponse;
+import io.saasforge.ai.mcp.model.McpConfigurationResponse;
+import io.saasforge.ai.mcp.model.McpConfigurationVersionResponse;
+import io.saasforge.ai.mcp.model.SaveMcpConfigurationRequest;
 import io.saasforge.ai.mcp.service.McpConfigurationService;
+import io.saasforge.ai.mcp.service.McpSelectionService;
+import io.saasforge.ai.mcp.service.McpToolSnapshot;
 import io.saasforge.sdk.core.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/mcp")
 public class TenantMcpController {
     private final McpConfigurationService configurations;
+    private final McpSelectionService selection;
 
-    public TenantMcpController(McpConfigurationService configurations) {
+    public TenantMcpController(McpConfigurationService configurations, McpSelectionService selection) {
         this.configurations = configurations;
+        this.selection = selection;
+    }
+
+    @GetMapping("/tools")
+    public ApiResponse<List<McpToolSnapshot>> tools() {
+        return ApiResponse.ok(selection.snapshotForConversation());
     }
 
     @GetMapping("/catalog")

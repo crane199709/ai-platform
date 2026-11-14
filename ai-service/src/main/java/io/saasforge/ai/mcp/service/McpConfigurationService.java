@@ -3,16 +3,27 @@ package io.saasforge.ai.mcp.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import io.saasforge.ai.mcp.entity.McpConfiguration;
 import io.saasforge.ai.mcp.entity.McpConfigurationVersion;
+import io.saasforge.ai.mcp.entity.McpToolGrant;
 import io.saasforge.ai.mcp.mapper.McpConfigurationMapper;
 import io.saasforge.ai.mcp.mapper.McpConfigurationVersionMapper;
-import io.saasforge.ai.mcp.model.*;
+import io.saasforge.ai.mcp.mapper.McpToolGrantMapper;
+import io.saasforge.ai.mcp.model.McpCatalogOptionResponse;
+import io.saasforge.ai.mcp.model.McpConfigurationResponse;
+import io.saasforge.ai.mcp.model.McpConfigurationVersionResponse;
+import io.saasforge.ai.mcp.model.McpToolDefinition;
+import io.saasforge.ai.mcp.model.SaveMcpConfigurationRequest;
 import io.saasforge.sdk.audit.AuditLog;
 import io.saasforge.sdk.core.api.ForgeException;
 import io.saasforge.sdk.core.api.FrameworkErrorCode;
 import io.saasforge.sdk.security.MembershipGrantStore;
 import io.saasforge.sdk.security.TenantContext;
 import java.time.OffsetDateTime;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,16 +34,19 @@ public class McpConfigurationService {
     private final McpConfigurationMapper configurations;
     private final McpConfigurationVersionMapper versions;
     private final MembershipGrantStore grants;
+    private final McpToolGrantMapper toolGrants;
 
     public McpConfigurationService(
             McpCatalogService catalog,
             McpConfigurationMapper configurations,
             McpConfigurationVersionMapper versions,
-            MembershipGrantStore grants) {
+            MembershipGrantStore grants,
+            McpToolGrantMapper toolGrants) {
         this.catalog = catalog;
         this.configurations = configurations;
         this.versions = versions;
         this.grants = grants;
+        this.toolGrants = toolGrants;
     }
 
     public List<McpCatalogOptionResponse> catalog() {
@@ -104,6 +118,21 @@ public class McpConfigurationService {
         version.setPublishedBy(TenantContext.current().identityId());
         version.setPublishedAt(OffsetDateTime.now());
         versions.insert(version);
+        for (String name : names(version.getToolNames())) {
+            var grant = new McpToolGrant();
+            grant.setCatalogId(catalogId);
+            grant.setCatalogVersion(current);
+            grant.setRuntimeName(McpSelectionService.runtimeName(catalogId, current, version.getVersion(), name));
+            grant.setTenantVersion(version.getVersion());
+            grant.setToolName(name);
+            grant.setOwnerId(TenantContext.current().membershipId());
+            try {
+                toolGrants.insert(grant);
+            } catch (DuplicateKeyException error) {
+                // 短摘要碰撞必须回滚发布，不能把两个原生工具映射到同一运行名。
+                throw new ForgeException(McpErrorCode.CONFLICT);
+            }
+        }
         row.setPublishedVersion(version.getVersion());
         configurations.updateById(row);
         return versionResponse(version, true);

@@ -21,6 +21,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -1087,6 +1088,176 @@ class PlatformIntegrationIT {
                         .toString())
                 .contains("业务只读目录")
                 .doesNotContain("平台未发布草稿");
+    }
+
+    @Test
+    void mcpToolsUseRealIamAllSelfCustomPoliciesAndRejectUnscopedMembers() throws Exception {
+        String self = login(false, UUID.fromString("019a2525-0900-7000-8000-000000000031"), "ai-mcp-self");
+        String custom = login(false, UUID.fromString("019a2525-0900-7000-8000-000000000032"), "ai-mcp-custom");
+        String unscoped = login(false, UUID.fromString("019a2525-0900-7000-8000-000000000033"), "ai-mcp-unscoped");
+        String id = createPublishedMcp("ABAC目录");
+        publishMcpSelection(id, tokenA, List.of("lookup", "detail"));
+        assertThat(mcpToolNames(id, tokenA)).containsExactlyInAnyOrder("lookup", "detail");
+        assertThat(mcpToolNames(id, self)).isEmpty();
+        assertThat(mcpToolNames(id, custom)).containsExactly("lookup");
+        assertThat(mcpToolNames(id, unscoped)).isEmpty();
+        String owned = createPublishedMcp("本人目录");
+        publishMcpSelection(owned, self, List.of("lookup"));
+        assertThat(mcpToolNames(owned, self)).containsExactly("lookup");
+        assertThat(mcpToolNames(owned, tokenB)).isEmpty();
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + owned + "/draft",
+                self,
+                Map.of("enabled", true, "toolNames", List.of("lookup"), "secretRef", "OTHER_TENANT_SECRET"),
+                400);
+        var unsafe = Map.of(
+                "name",
+                "写工具",
+                "url",
+                "https://mcp.example.test/mcp",
+                "protocol",
+                "STREAMABLE_HTTP",
+                "credentialMode",
+                "PUBLIC",
+                "isolation",
+                "PUBLIC_DATA",
+                "tools",
+                List.of(Map.of(
+                        "name",
+                        "write",
+                        "description",
+                        "不应执行",
+                        "inputSchema",
+                        Map.of("type", "object"),
+                        "permission",
+                        "ai:mcp:read",
+                        "readOnly",
+                        false)));
+        call("http://127.0.0.1:" + port, HttpMethod.POST, "/platform/mcp", operator, unsafe, 400);
+    }
+
+    private String createPublishedMcp(String name) {
+        String base = "http://127.0.0.1:" + port;
+        var tools = List.of("lookup", "detail").stream()
+                .map(tool -> Map.of(
+                        "name",
+                        tool,
+                        "description",
+                        "只读查询",
+                        "inputSchema",
+                        Map.of("type", "object"),
+                        "permission",
+                        "ai:mcp:read",
+                        "readOnly",
+                        true))
+                .toList();
+        String id = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/mcp",
+                        operator,
+                        Map.of(
+                                "name",
+                                name,
+                                "url",
+                                "https://mcp.example.test/mcp",
+                                "protocol",
+                                "STREAMABLE_HTTP",
+                                "credentialMode",
+                                "PUBLIC",
+                                "isolation",
+                                "PUBLIC_DATA",
+                                "tools",
+                                tools),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/mcp/" + id + "/publish", operator, Map.of(), 200);
+        return id;
+    }
+
+    private void publishMcpSelection(String id, String token, List<String> tools) {
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/mcp/" + id + "/draft",
+                token,
+                Map.of("enabled", true, "toolNames", tools),
+                200);
+        call(platform.gateway(), HttpMethod.POST, "/ai/mcp/" + id + "/publish", token, Map.of(), 200);
+    }
+
+    private List<String> mcpToolNames(String id, String token) {
+        var names = new ArrayList<String>();
+        for (var tool : call(platform.gateway(), HttpMethod.GET, "/ai/mcp/tools", token, null, 200)
+                .path("data")) {
+            if (tool.path("catalogId").asText().equals(id)) {
+                names.add(tool.path("nativeName").asText());
+            }
+        }
+        return names;
+    }
+
+    @Test
+    void mcpLongNativeNamesProduceStableProviderSafeAliases() {
+        String base = "http://127.0.0.1:" + port;
+        String first = "a".repeat(127) + "x";
+        String second = "a".repeat(127) + "y";
+        var tools = List.of(first, second).stream()
+                .map(name -> Map.of(
+                        "name",
+                        name,
+                        "description",
+                        "完整原生名称",
+                        "inputSchema",
+                        Map.of("type", "object"),
+                        "permission",
+                        "ai:mcp:read",
+                        "readOnly",
+                        true))
+                .toList();
+        String id = call(
+                        base,
+                        HttpMethod.POST,
+                        "/platform/mcp",
+                        operator,
+                        Map.of(
+                                "name",
+                                "长名称工具目录",
+                                "url",
+                                "https://mcp.example.test/mcp",
+                                "protocol",
+                                "STREAMABLE_HTTP",
+                                "credentialMode",
+                                "PUBLIC",
+                                "isolation",
+                                "PUBLIC_DATA",
+                                "tools",
+                                tools),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(base, HttpMethod.POST, "/platform/mcp/" + id + "/publish", operator, Map.of(), 200);
+        publishMcpSelection(id, tokenA, List.of(first, second));
+        assertThat(mcpToolNames(id, tokenA)).containsExactlyInAnyOrder(first, second);
+        var aliases = new ArrayList<String>();
+        for (var tool : call(platform.gateway(), HttpMethod.GET, "/ai/mcp/tools", tokenA, null, 200)
+                .path("data")) {
+            if (tool.path("catalogId").asText().equals(id)) {
+                String alias = tool.path("runtimeName").asText();
+                assertThat(alias).matches("m[0-9a-f]{32}");
+                assertThat(("mcp__ai_service__" + alias).length()).isLessThanOrEqualTo(64);
+                aliases.add(alias);
+            }
+        }
+        assertThat(aliases).hasSize(2).doesNotHaveDuplicates();
+        var repeated = call(platform.gateway(), HttpMethod.GET, "/ai/mcp/tools", tokenA, null, 200)
+                .toString();
+        assertThat(repeated).contains(aliases.get(0), aliases.get(1), first, second);
     }
 
     private String createPrompt(String content) {

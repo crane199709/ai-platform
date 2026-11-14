@@ -1,7 +1,7 @@
 package io.saasforge.ai.mcp.model;
 
-import jakarta.validation.constraints.*;
-import java.util.*;
+import java.util.List;
+import java.util.UUID;
 
 public record McpConfigurationResponse(
         UUID catalogId,

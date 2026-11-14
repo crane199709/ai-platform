@@ -1,6 +1,7 @@
 package io.saasforge.ai.mcp.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import io.saasforge.sdk.tenant.AuditableEntity;
 import java.time.OffsetDateTime;
 import java.util.UUID;

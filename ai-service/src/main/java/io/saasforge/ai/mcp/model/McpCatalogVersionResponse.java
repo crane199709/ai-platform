@@ -1,8 +1,7 @@
 package io.saasforge.ai.mcp.model;
 
-import jakarta.validation.constraints.*;
 import java.time.OffsetDateTime;
-import java.util.*;
+import java.util.UUID;
 
 public record McpCatalogVersionResponse(
         UUID catalogId,

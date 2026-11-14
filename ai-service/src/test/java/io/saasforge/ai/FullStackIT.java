@@ -6,7 +6,10 @@ import io.saasforge.sdk.manifest.ResourceManifestCollector;
 import java.io.ByteArrayOutputStream;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -57,6 +60,7 @@ class FullStackIT {
             .path("url")
             .asText();
     final List<Process> processes = new ArrayList<>();
+    String operator;
 
     @LocalServerPort
     int port;
@@ -102,10 +106,9 @@ class FullStackIT {
                                 .asText())
                         .isEqualTo("REPORTED"));
         platform.postgres.script("postgres/platform/seed.sql");
-        platform.postgres.script("fullstack/seed.sql");
         platform.publishSeededTenantState();
         platform.startGateway(port);
-        String operator = login(true, null);
+        operator = login(true, null);
         var permissions =
                 ResourceManifestCollector.collect(
                                 "ai-service",
@@ -175,7 +178,7 @@ class FullStackIT {
                         "status",
                         "ENABLED",
                         "contextWindow",
-                        4096),
+                        65536),
                 201);
         String catalog = call(
                         platform.gateway(),
@@ -286,14 +289,19 @@ class FullStackIT {
                 "http://127.0.0.1:5180/remoteEntry.js",
                 "http://localhost:5174/")) {
             Awaitility.await()
+                    .alias("HTTP readiness " + url)
                     .atMost(Duration.ofSeconds(45))
                     .ignoreExceptions()
-                    .until(() -> PlatformEnvironment.client(url)
-                                    .get()
-                                    .retrieve()
-                                    .toBodilessEntity()
-                                    .getStatusCode()
-                                    .value()
+                    .until(() -> HttpClient.newBuilder()
+                                    .connectTimeout(Duration.ofSeconds(2))
+                                    .build()
+                                    .send(
+                                            HttpRequest.newBuilder(URI.create(url))
+                                                    .timeout(Duration.ofSeconds(3))
+                                                    .GET()
+                                                    .build(),
+                                            HttpResponse.BodyHandlers.discarding())
+                                    .statusCode()
                             == 200);
         }
         Files.writeString(
@@ -345,7 +353,6 @@ class FullStackIT {
                 .path("data");
         assertThat(usage.path("totalTokens").asInt()).isEqualTo(54);
         assertThat(usage.path("toolCalls").asInt()).isEqualTo(2);
-        String operator = login(true, null);
         Awaitility.await()
                 .atMost(Duration.ofSeconds(60))
                 .untilAsserted(() -> assertThat(call(
@@ -367,6 +374,12 @@ class FullStackIT {
                 .directory(directory.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(output.resolve(name + ".log").toFile());
+        if (name.equals("runner")) {
+            builder.environment()
+                    .keySet()
+                    .removeIf(
+                            key -> !List.of("PATH", "TMPDIR", "LANG", "LC_ALL").contains(key));
+        }
         builder.environment().putAll(environment);
         processes.add(builder.start());
     }

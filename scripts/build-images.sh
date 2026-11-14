@@ -17,7 +17,21 @@ flags=(-U)
 [[ "${AI_MAVEN_OFFLINE:-false}" == true ]] && flags=(-o)
 [[ -n "${AI_MAVEN_REPOSITORY:-}" ]] && flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY")
 # 所有三工程、DSH契约与平台/E2E门禁必须先通过；此处仅打包已验收源码。
-(cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" -DskipTests package spring-boot:repackage)
+(cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" -DskipTests package)
+python3 - <<'ARTIFACT'
+from pathlib import Path
+from zipfile import ZipFile
+jar=Path('ai-service/target/ai-service-0.1.0-SNAPSHOT.jar')
+with ZipFile(jar) as archive:
+ names=archive.namelist()
+ assert 'BOOT-INF/classes/io/saasforge/ai/AiApplication.class' in names, '未生成可执行Spring Boot生产包'
+ entries=[name for name in names if name.startswith('BOOT-INF/classes/')]
+ forbidden_names=('FullStackIT','PlatformIntegrationIT','PlatformEnvironment','FakeAgentRuntime','V9001__','fullstack/')
+ assert not any(any(marker in name for marker in forbidden_names) for name in entries), '生产包包含测试类或fixture'
+ forbidden_values=(b'deterministic-local-model-key',b'test-provider-secret',b'fullstack-runner-service-identity')
+ assert not any(any(marker in archive.read(name) for marker in forbidden_values) for name in entries if not name.endswith('/')), '生产包包含测试密钥'
+ print('Production jar packaging verified:',jar)
+ARTIFACT
 docker build --platform "$platform" -f deploy/ai-service.Dockerfile --build-arg "VERSION=$AI_IMAGE_TAG" --build-arg "REVISION=$revision" -t "$registry/ai-service:$AI_IMAGE_TAG" .
 pnpm --filter @ai-platform/runner build
 rm -rf "$root/runner/target/image"

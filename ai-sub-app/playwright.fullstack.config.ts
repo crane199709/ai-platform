@@ -15,5 +15,6 @@ export default defineConfig({
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
 })

@@ -47,20 +47,27 @@ jobs:
         run: |
           export AI_MAVEN_REPOSITORY="$RUNNER_TEMP/ai-runtime-m2"
           cd .runtime-source/saas-forge/backend
-          ./mvnw --batch-mode "-Dmaven.repo.local=$AI_MAVEN_REPOSITORY" -DskipTests -pl forge-iam,forge-platform,forge-gateway,forge-architecture -am install
+          ./mvnw --batch-mode "-Dmaven.repo.local=$AI_MAVEN_REPOSITORY" -DskipTests install
           cd ../frontend
           pnpm install --frozen-lockfile
+      - name: Resolve public AI dependencies without updating the pinned Forge snapshots
+        run: |
+          cd ai-service
+          ./mvnw --batch-mode -s .mvn/settings.xml -nsu "-Dmaven.repo.local=$RUNNER_TEMP/ai-runtime-m2" -DskipTests test-compile
       - name: DSH fixed-version contract and three-project gate
         env:
+          AI_MAVEN_OFFLINE: 'true'
           AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
         run: bash scripts/check.sh all
       - name: Real IAM, Gateway, MQ and platform usage contract
         env:
+          AI_MAVEN_OFFLINE: 'true'
           AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
           AI_FORGE_RUNTIME_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
         run: bash scripts/check.sh platform
       - name: Real Shell full-stack gate
         env:
+          AI_MAVEN_OFFLINE: 'true'
           AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
           AI_FORGE_RUNTIME_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
           AI_FORGE_SOURCE: ${{ github.workspace }}/.runtime-source/saas-forge
@@ -68,6 +75,7 @@ jobs:
         run: bash scripts/check-fullstack.sh
       - name: Build immutable local images (no push)
         env:
+          AI_MAVEN_OFFLINE: 'true'
           AI_MAVEN_REPOSITORY: ${{ runner.temp }}/ai-runtime-m2
           AI_IMAGE_TAG: v0.1.0-g${{ github.sha }}
         run: bash scripts/build-images.sh

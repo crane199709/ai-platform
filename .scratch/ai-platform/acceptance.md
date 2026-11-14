@@ -19,11 +19,23 @@ Status: in-progress（工单12；最终结果待11合入后的统一验收）
 | 门禁 | 当前结果 | 证据 |
 | --- | --- | --- |
 | Runner新HTTP readiness/受保护metrics/只读监控端口 | 3/3通过（工单12局部） | `pnpm --filter @ai-platform/runner exec node --test src/server.test.ts` |
+| FullStackIT轻量编译与Java格式 | 20:12离线`test-compile`通过；20:14 `spotless:check`通过，无fixture启动 | 私有Maven目录同上；Checkstyle 0 violation，13个测试源编译成功 |
 | Shell全链路首次尝试 | 未进入业务，独立RocketMQ冷启动3分钟超时，临时容器全部清理；未改超时/内存或常驻服务 | `/private/tmp/ai12-fullstack-run.log` |
 | 最终service/runner/sub-app/platform | 待11合入并统一验证 | 待填 |
 | 最终真实Shell两宽 | 待11合入并串行运行 | `/private/tmp/ai12-fullstack/`（预定） |
 | 最终Linux Runner镜像真实DSH/cgroup | 待最终镜像 | `scripts/check-runner-image.mjs` |
-| Kustomize与YAML/脚本语法 | 9个K8s对象渲染、CI/Prometheus/Secret样例YAML解析、bash/node语法通过 | `/private/tmp/ai12-kubernetes.yaml` |
+| Kustomize与YAML/脚本语法 | 9个K8s对象渲染，12份部署/CI YAML通过项目固定`yaml@2.9.1`解析，bash/node语法通过 | `/private/tmp/ai12-kubernetes-final.yaml` |
+
+## 预验收排障记录（均非最终验收）
+
+| 时间/阶段 | 性质与结果 | 处理 |
+| --- | --- | --- |
+| 18:19:47 容器冷启动 | RocketMQ 3分钟启动超时，未进入业务 | 全部临时容器清理；保持原超时/堆外预算，串行运行；后续MQ分别21.5s/17.4s启动，但不把重叠认定为唯一根因 |
+| 18:47:20 测试种子 | 新增重复seed误用`tenant.contact_email`，真实字段为`admin_contact` | 既有seed已含A/B/C合法数据，删除多余seed和调用；未改产品schema |
+| 18:52 测试就绪探测 | 新循环等待45秒，未标出具体URL且无单次响应时限，尚未打开浏览器 | 改成显式JDK完整URI、3秒单次超时、URL alias；日志`/private/tmp/ai12-fullstack-round3.log` |
+| 18:53:54 编译检查 | 诊断修正漏加URI/HttpRequest/HttpResponse imports，未创建任何fixture | 已补imports并格式化；20:12轻量编译通过，完整运行仍待最终门禁 |
+
+模型fixture的contextWindow同时按实际代理预算修为65536，容纳4096输出预算与输入；保留主代码窗口硬限制。Operator复用已完成真实MFA的会话，测试Runner仅继承必要系统环境与显式配置。最终门禁通过前，上述修正不视为业务已通过。
 
 ## 最终制品
 

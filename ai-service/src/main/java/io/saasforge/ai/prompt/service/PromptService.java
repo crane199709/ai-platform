@@ -69,12 +69,21 @@ public class PromptService {
     public List<PromptOptionResponse> availablePublished() {
         var result = new ArrayList<PromptOptionResponse>();
         presets.findAll()
-                .forEach(preset -> result.add(
-                        new PromptOptionResponse(preset.getId(), preset.getName(), "PLATFORM", preset.getVersion())));
+                .forEach(preset -> result.add(new PromptOptionResponse(
+                        preset.getId(),
+                        preset.getName(),
+                        "PLATFORM",
+                        preset.getVersion(),
+                        variables(preset.getVariableNames()))));
         templates
                 .findAll(true)
                 .forEach(template -> result.add(new PromptOptionResponse(
-                        template.getId(), template.getName(), "TENANT", template.getPublishedVersion())));
+                        template.getId(),
+                        template.getName(),
+                        "TENANT",
+                        template.getPublishedVersion(),
+                        variables(requireVersion(template.getId(), template.getPublishedVersion())
+                                .getVariableNames()))));
         return List.copyOf(result);
     }
 

@@ -7,7 +7,7 @@
 | `POST /prompts` | `ai:prompt:update` | 创建租户草稿，201 |
 | `PUT /prompts/{id}/draft` | `ai:prompt:update` | 保存租户草稿 |
 | `GET /prompts/{id}` | `ai:prompt:read` | 读取模板、草稿和当前发布版本号 |
-| `GET /prompts/published` | `ai:conversation:use` | 读取可选的已发布模板元数据，不返回草稿或正文 |
+| `GET /prompts/published` | `ai:conversation:use` | 读取可选的已发布模板元数据与 variables 声明，不返回草稿或正文 |
 | `POST /prompts/default/render` | `ai:conversation:use` | 渲染平台默认已发布模板 |
 | `GET /prompts` | `ai:prompt:read` | 读取平台预置与当前租户模板 |
 | `POST /prompts/{id}/publish` | `ai:prompt:publish` | 草稿复制为新的不可变发布版本 |
@@ -29,3 +29,5 @@
 会话工单通过 `prompt.service.PromptService.resolvePublished(UUID templateId, Integer version, Map<String,String> variables)` 取得 `ResolvedPromptResponse(templateId, version, content)`。`templateId=null` 选择平台默认的已发布模板，版本为 null 选择当前发布版本。调用方必须提供当前租户和已认证成员上下文，并具有 `ai:conversation:use`；会话应持久化实际返回的模板 ID、版本与渲染内容，后续回合及恢复继续使用会话快照。
 
 本工单提供后端契约；会话启动向 Runner 注入及管理页面由后续工单接通，不把接口验收当作 Runner 联调完成。
+
+会话选择项的 `variables` 取自 `publishedVersion` 对应不可变发布快照；修改草稿中的变量声明不会改变普通使用者看到的选择项。会话启动和历史恢复契约见 [conversation-api.md](conversation-api.md)。

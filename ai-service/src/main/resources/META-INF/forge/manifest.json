@@ -7,6 +7,22 @@
     "ai:conversation:use": {
       "name": "使用 AI 助手",
       "group": "AI 工作台"
+    },
+    "ai:skill:read": {
+      "name": "读取 Skill 配置",
+      "group": "AI 工作台"
+    },
+    "ai:skill:update": {
+      "name": "修改 Skill 草稿",
+      "group": "AI 工作台"
+    },
+    "ai:skill:publish": {
+      "name": "发布 Skill 配置",
+      "group": "AI 工作台"
+    },
+    "ai:skill:rollback": {
+      "name": "回滚 Skill 配置",
+      "group": "AI 工作台"
     }
   },
   "menus": [
@@ -20,11 +36,22 @@
     }
   ],
   "roles": [
-    { "code": "ai-user", "name": "AI 使用者", "permissions": ["ai:conversation:use"] },
+    {
+      "code": "ai-user",
+      "name": "AI 使用者",
+      "permissions": ["ai:conversation:use"]
+    },
     {
       "code": "ai-admin",
       "name": "AI 管理员",
-      "permissions": ["ai:conversation:use", "ai:configuration:manage"]
+      "permissions": [
+        "ai:conversation:use",
+        "ai:configuration:manage",
+        "ai:skill:read",
+        "ai:skill:update",
+        "ai:skill:publish",
+        "ai:skill:rollback"
+      ]
     }
   ]
 }

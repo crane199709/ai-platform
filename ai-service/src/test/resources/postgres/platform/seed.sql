@@ -19,7 +19,7 @@ INSERT INTO membership_role (membership_id, role_id) VALUES
 ('019a2525-0000-7000-8000-000000000032', '019a2525-0000-7000-8000-000000000042');
 INSERT INTO role_permission (role_id, permission_id)
 SELECT r.id, p.id FROM role r CROSS JOIN permission p
-WHERE r.code = 'ai-verification' AND p.code IN ('ai:conversation:use', 'ai:configuration:manage', 'iam:audit:read') AND NOT p.deleted;
+WHERE r.code = 'ai-verification' AND p.code IN ('ai:conversation:use', 'ai:configuration:manage', 'ai:skill:read', 'ai:skill:update', 'ai:skill:publish', 'ai:skill:rollback', 'iam:audit:read') AND NOT p.deleted;
 INSERT INTO operator (id, account, display_name, password_hash)
 VALUES ('019a2525-0000-7000-8000-000000000071', 'ai-operator', 'AI 接入验收',
 '$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
@@ -53,3 +53,17 @@ VALUES ('019a2525-0000-7000-8000-000000000003', '019a2525-0000-7000-8000-0000000
 INSERT INTO operator (id, account, display_name, password_hash)
 VALUES ('019a2525-0000-7000-8000-000000000073', 'ai-observer', '无平台权限验收',
 '$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
+
+-- Skill 草稿编辑者有读取/修改权，但不能发布或回滚。
+INSERT INTO identity (id, account, email, display_name, password_hash) VALUES
+('019a2525-0000-7000-8000-000000000013', 'ai-skill-editor', 'ai-skill-editor@example.test', 'Skill 草稿编辑者',
+'$2a$10$IbZhtjdYzxJ0Z19dRQf3je8E29VAX2jP2KlXz1r1Um1uaF042/jJ.');
+INSERT INTO membership (id, identity_id, tenant_id) VALUES
+('019a2525-0000-7000-8000-000000000035', '019a2525-0000-7000-8000-000000000013', '019a2525-0000-7000-8000-000000000001');
+INSERT INTO role (id, tenant_id, code, name, builtin) VALUES
+('019a2525-0000-7000-8000-000000000045', '019a2525-0000-7000-8000-000000000001', 'ai-skill-editor', 'Skill 草稿编辑者', false);
+INSERT INTO membership_role (membership_id, role_id) VALUES
+('019a2525-0000-7000-8000-000000000035', '019a2525-0000-7000-8000-000000000045');
+INSERT INTO role_permission (role_id, permission_id)
+SELECT '019a2525-0000-7000-8000-000000000045', p.id FROM permission p
+WHERE p.code IN ('ai:conversation:use', 'ai:skill:read', 'ai:skill:update') AND NOT p.deleted;

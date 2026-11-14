@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 平台级 Skill 目录：编码、名称、说明、版本、文件内容/引用、状态
 - [ ] 租户启用/停用 Skill；不能上传任意 Skill 代码（v1）

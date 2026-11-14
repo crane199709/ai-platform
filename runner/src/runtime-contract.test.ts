@@ -36,9 +36,9 @@ async function fixture(t: TestContext, scenario = 'text', overrides: Partial<Run
       )
       return
     }
-    if (scenario.startsWith('tool') && requests.length === 1) {
+    if ((scenario.startsWith('tool') || scenario === 'skill') && requests.length === 1) {
       res.end(
-        `data: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: 'mcp__ai_service__lookup', arguments: '{"query":"status"}' } }] }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: scenario === 'skill' ? 'skill' : 'mcp__ai_service__lookup', arguments: scenario === 'skill' ? '{"name":"approved-summary"}' : '{"query":"status"}' } }] }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: 'tool-1', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
       )
       return
     }
@@ -606,3 +606,160 @@ test(
     assert.doesNotMatch(JSON.stringify(exported.transcript), /PROMPT-17/)
   },
 )
+
+test(
+  'real DSH reads reviewed Skill snapshots and keeps disabled new sessions isolated',
+  { timeout: 60000 },
+  async (t) => {
+    const { call, requests, base, headers } = await fixture(t, 'skill')
+    const skills = [
+      {
+        catalogId: '019a2525-0000-7000-8000-000000000081',
+        code: 'approved-summary',
+        name: 'Approved summary',
+        description: 'Summarize approved records',
+        version: 1,
+        content: 'SKILL_SNAPSHOT_ONE: include a verified evidence section.',
+      },
+    ]
+    const created = await call('/sessions', 'POST', {
+      sessionId: 'with-skill',
+      model: 'test-model',
+      skills,
+    })
+    assert.equal(created.status, 201, await created.text())
+    const stream = await call('/sessions/with-skill/messages', 'POST', {
+      text: 'use the approved summary skill',
+      contextToken: 'skill-context',
+    })
+    const events = await stream.text()
+    assert.match(events, /event: completed/)
+    assert.deepEqual(
+      (requests[0].tools as any[]).map((tool) => tool.function.name),
+      ['skill'],
+    )
+    assert.match(JSON.stringify(requests[0].messages), /approved-summary/)
+    assert.match(JSON.stringify(requests[1].messages), /SKILL_SNAPSHOT_ONE/)
+    assert.match(events, /event: tool.call/)
+    assert.match(events, /SKILL_SNAPSHOT_ONE/)
+    assert.equal(
+      (
+        await call('/sessions', 'POST', {
+          sessionId: 'after-disable',
+          model: 'test-model',
+          skills: [],
+        })
+      ).status,
+      201,
+    )
+    assert.match(
+      await (
+        await call('/sessions/after-disable/messages', 'POST', {
+          text: 'summarize',
+          contextToken: 'new-context',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    assert.deepEqual(requests[2].tools ?? [], [])
+    assert.doesNotMatch(JSON.stringify(requests[2].messages), /approved-summary|SKILL_SNAPSHOT_ONE/)
+    assert.match(
+      await (
+        await call('/sessions/with-skill/messages', 'POST', {
+          text: '/approved-summary summarize again',
+          contextToken: 'old-context',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    assert.deepEqual(
+      (requests[3].tools as any[]).map((tool) => tool.function.name),
+      ['skill'],
+    )
+    assert.match(JSON.stringify(requests[3].messages), /SKILL_SNAPSHOT_ONE/)
+    const newer = [
+      { ...skills[0], version: 2, content: 'SKILL_SNAPSHOT_TWO: compare newer records.' },
+    ]
+    assert.equal(
+      (
+        await call('/sessions', 'POST', {
+          sessionId: 'new-version',
+          model: 'test-model',
+          skills: newer,
+        })
+      ).status,
+      201,
+    )
+    assert.match(
+      await (
+        await call('/sessions/new-version/messages', 'POST', {
+          text: '/approved-summary summarize',
+          contextToken: 'version-two-context',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    assert.match(JSON.stringify(requests[4].messages), /SKILL_SNAPSHOT_TWO/)
+    assert.doesNotMatch(JSON.stringify(requests[4].messages), /SKILL_SNAPSHOT_ONE/)
+    assert.match(
+      await (
+        await call('/sessions/with-skill/messages', 'POST', {
+          text: '/approved-summary original version',
+          contextToken: 'version-one-context',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    assert.match(JSON.stringify(requests[5].messages), /SKILL_SNAPSHOT_ONE/)
+    assert.doesNotMatch(JSON.stringify(requests[5].messages), /SKILL_SNAPSHOT_TWO/)
+    const other = (path: string, method: string, body: unknown) =>
+      fetch(`${base}/v1/tenants/other${path}`, { method, headers, body: JSON.stringify(body) })
+    assert.equal(
+      (await other('/sessions', 'POST', { sessionId: 'with-skill', model: 'test-model' })).status,
+      201,
+    )
+    assert.match(
+      await (
+        await other('/sessions/with-skill/messages', 'POST', {
+          text: 'summarize',
+          contextToken: 'other-context',
+        })
+      ).text(),
+      /event: completed/,
+    )
+    assert.deepEqual(requests[6].tools ?? [], [])
+    assert.doesNotMatch(
+      JSON.stringify(requests[6].messages),
+      /approved-summary|SKILL_SNAPSHOT_ONE|SKILL_SNAPSHOT_TWO/,
+    )
+  },
+)
+
+test('Skill snapshots reject paths, executable attachments, duplicate codes and invalid versions', async (t) => {
+  const { call } = await fixture(t)
+  const valid = {
+    catalogId: '019a2525-0000-7000-8000-000000000081',
+    code: 'approved-summary',
+    name: 'Approved',
+    description: 'Reviewed',
+    version: 1,
+    content: 'Approved instructions',
+  }
+  for (const skills of [
+    [{ ...valid, code: '../escape' }],
+    [{ ...valid, code: 'invalid--name' }],
+    [{ ...valid, path: '/tmp/unreviewed/SKILL.md' }],
+    [{ ...valid, scripts: [{ path: 'run.sh', content: 'echo never' }] }],
+    [{ ...valid, version: 0 }],
+    [{ ...valid, content: 'bad\0content' }],
+    [valid, valid],
+  ]) {
+    const result = await call('/sessions', 'POST', {
+      sessionId: 'invalid',
+      model: 'test-model',
+      skills,
+    })
+    assert.equal(result.status, 400)
+    assert.equal((await result.json()).code, 'runner.invalidRequest')
+  }
+})

@@ -4,14 +4,14 @@
 
 ## 会话与回合
 
-| 方法   | 路径                                                   | 请求 / 响应                                                                                                                                                                                                     |
-| ------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/v1/tenants/{tenantId}/sessions`                      | `{ "sessionId": "conversation UUID", "model": "catalog model id", "transcript": [], "tools": [], "instructions": "可选已发布Prompt正文" }` → 201 `{ "sessionId", "model", "recovery": "none\|context-replay" }` |
-| POST   | `/v1/tenants/{tenantId}/sessions/{sessionId}/messages` | `{ "text": "用户输入", "contextToken": "短期能力", "model": "可选模型ID" }` → SSE                                                                                                                               |
-| POST   | `/v1/tenants/{tenantId}/sessions/{sessionId}/cancel`   | 无 body → 200 `{ "cancelled": true/false }`                                                                                                                                                                     |
-| GET    | `/v1/tenants/{tenantId}/sessions/{sessionId}/export`   | 200 `{ "sessionId", "model", "transcript": [...] }`                                                                                                                                                             |
-| DELETE | `/v1/tenants/{tenantId}`                               | 204，终止进程并清理 home/workspace；不存在时同样返回 204                                                                                                                                                        |
-| GET    | `/v1/runtime`                                          | DSH 版本、profile、限额、租户数量及 `{tenantId,processId?,state}` 诊断；不含内容和凭据                                                                                                                          |
+| 方法   | 路径                                                   | 请求 / 响应                                                                                                                                                                                                                                                       |
+| ------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/tenants/{tenantId}/sessions`                      | `{ "sessionId": "conversation UUID", "model": "catalog model id", "transcript": [], "tools": [], "instructions": "可选已解析Prompt", "skills": [], "instructions": "可选已发布Prompt正文" }` → 201 `{ "sessionId", "model", "recovery": "none\|context-replay" }` |
+| POST   | `/v1/tenants/{tenantId}/sessions/{sessionId}/messages` | `{ "text": "用户输入", "contextToken": "短期能力", "model": "可选模型ID" }` → SSE                                                                                                                                                                                 |
+| POST   | `/v1/tenants/{tenantId}/sessions/{sessionId}/cancel`   | 无 body → 200 `{ "cancelled": true/false }`                                                                                                                                                                                                                       |
+| GET    | `/v1/tenants/{tenantId}/sessions/{sessionId}/export`   | 200 `{ "sessionId", "model", "transcript": [...] }`                                                                                                                                                                                                               |
+| DELETE | `/v1/tenants/{tenantId}`                               | 204，终止进程并清理 home/workspace；不存在时同样返回 204                                                                                                                                                                                                          |
+| GET    | `/v1/runtime`                                          | DSH 版本、profile、限额、租户数量及 `{tenantId,processId?,state}` 诊断；不含内容和凭据                                                                                                                                                                            |
 
 `tenantId` / `sessionId` 为 `[A-Za-z0-9_-]{1,128}`。`model` 为 `[A-Za-z0-9][A-Za-z0-9_./:-]{0,127}`，允许平台目录动态编码；AI 服务能力代理校验模型是否属于本回合授权范围，Runner 不维护第二份业务目录。调用方不能提供 endpoint、apiKey、shell、workspace 或 profile 补丁。JSON 请求最大 1 MiB，未识别字段拒绝；text 和每条 transcript content 最大 128000 字符；恢复快照最多 1000 条消息。AI 服务须在会话长度限制中考虑此边界，不能假设任意长的 90 天历史都能一次恢复。
 
@@ -85,22 +85,15 @@ node --max-old-space-size=256 --max-semi-space-size=8 <官方包>/lib/bin.js --p
 
 pnpm-workspace.yaml 显式拒绝未使用原生能力的依赖构建脚本；受限 SDK profile 的真实测试不需要 terminal、Koffi、protobuf 或 Google provider 的安装脚本。升级时须保留这一约束并重跑全部契约。
 
-## Skill 接入接缝（工单 08）
+## 审核 Skill 快照（工单 08）
 
-本工单保留官方 skill registry，尚未挂载平台审核 Skill，默认禁用 skill-filesystem / tool-skill。工单 08 在 DshProcess.start 的受控 profile patch 接缝物化审核内容，再仅对非空审核清单启用：
+建会话的可选 `skills` 只接受 AI 服务已解析的已发布审核快照，默认空清单。每项字段为 `catalogId`（UUID）、`code`（1–64 字符小写字母/数字 kebab-case）、`name`（120 字符）、`description`（1000 字符）、`version`（正整数）、`content`（非空 Markdown 正文，最多 64000 字符）。清单最多 32 项且序列化后最多 512 KiB，编码与目录 ID 均不能重复；拒绝额外字段、文件路径、脚本附件、空字符或任意下载引用。整个建会话请求仍受 1 MiB 上限约束，AI 服务须把 Skill 与 Prompt 计入恢复预算。
 
-```yaml
-- id: skill-filesystem
-  disabled: false
-  config:
-    includeDefaultRoots: false
-    customSkillDirs: [<tenant-home>/skills]
-    watch: false
-- id: tool-skill
-  disabled: false
-```
+Runner 在随机私有 tenant home 的 `skills/<code>/SKILL.md` 中写入受控 frontmatter 与快照正文（目录 0700、文件 0600）。非空清单只额外启用官方 `skill-filesystem` 与 `tool-skill`：`includeDefaultRoots:false`、`customSkillDirs:[受控skills目录]`、`watch:false`；Shell、文件操作、Web 与其他原生执行工具继续禁用。官方工具名为 `skill`，通过公开 Skill 文件协议读取正文，不使用虚构的 DSH 环境变量或内部接口。
 
-官方 Skill 路径为 `$DSH_HOME/skills/<name>/SKILL.md` 或显式 customSkillDirs；另有 `$DSH_AGENTS_HOME/skills`。没有在上游发现 `DSH_SKILLS_PATH`。真实模型工具名是 `skill`。须保持 includeDefaultRoots:false，以免扫描宿主/项目未审核 Skill；物化 payload 只接收审核内容，不能接收任意路径/命令，并维持 shell/FS 工具禁用。工单 08 补真实 Skill 契约；此接缝未冒充本工单已交付的 Skill 功能。
+每个会话保存独立 Skill 快照。清单参与进程配置比较，切换会话 Skill 版本会重建当前租户进程并从该会话 transcript 恢复；停用后传空清单的新会话不加载旧目录，已有会话保持已捕获版本。空闲回收、取消或租户删除清理整个受控目录。Java Conversation 必须保存创建时的清单，Runner 重建时仍提供原清单。
+
+真实 DSH HTTP 契约验证 Provider 只有允许的 `skill` 工具、调用后收到审核正文、停用后的新会话没有该 Skill、旧会话版本仍保留，以及跨租户不可见；同时验证路径/脚本附件/重复编码与无效版本拒绝。
 
 ## 错误与排障
 

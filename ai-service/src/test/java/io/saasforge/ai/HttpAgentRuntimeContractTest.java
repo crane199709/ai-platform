@@ -11,6 +11,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -27,6 +28,7 @@ class HttpAgentRuntimeContractTest {
         var json = JsonMapper.builder().build();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         var requests = new CopyOnWriteArrayList<JsonNode>();
+        var messageRequests = new CopyOnWriteArrayList<JsonNode>();
         var creates = new AtomicInteger();
         var prompts = new AtomicInteger();
         var firstDelta = new CountDownLatch(1);
@@ -40,6 +42,7 @@ class HttpAgentRuntimeContractTest {
                 exchange.getResponseBody().write(response);
             } else if (path.endsWith("/messages")) {
                 var request = json.readTree(exchange.getRequestBody());
+                messageRequests.add(request);
                 assertThat(request.path("contextToken").asText()).isEqualTo("short-capability");
                 assertThat(request.toString()).doesNotContain("test-service-token");
                 if (prompts.incrementAndGet() == 1) {
@@ -80,7 +83,21 @@ class HttpAgentRuntimeContractTest {
                     new AgentRuntime.TranscriptMessage("assistant", "old answer", null));
             var run = new AgentRuntime.Run(
                     new AgentRuntime.Session(
-                            tenant, session, model, snapshot, "Published instructions", List.of(), List.of()),
+                            tenant,
+                            session,
+                            model,
+                            snapshot,
+                            "Published instructions",
+                            List.of(),
+                            List.of(Map.of(
+                                    "name",
+                                    "lookup",
+                                    "description",
+                                    "Approved read-only lookup",
+                                    "inputSchema",
+                                    Map.of("type", "object"),
+                                    "readOnly",
+                                    true))),
                     "next question",
                     "short-capability");
             var events = new CopyOnWriteArrayList<AgentRuntime.Event>();
@@ -104,7 +121,13 @@ class HttpAgentRuntimeContractTest {
                         .isEqualTo("old question");
                 assertThat(request.path("transcript").get(0).has("name")).isFalse();
                 assertThat(request.path("model").asText()).isEqualTo(model);
-                assertThat(request.path("tools")).isEmpty();
+                assertThat(request.path("tools")).hasSize(1);
+                assertThat(request.path("tools").get(0).path("name").asText()).isEqualTo("lookup");
+            }
+            assertThat(messageRequests).hasSize(2);
+            for (var message : messageRequests) {
+                assertThat(message.path("tools").isArray()).isTrue();
+                assertThat(message.path("tools").get(0).path("name").asText()).isEqualTo("lookup");
             }
             assertThat(runtime.cancel(tenant, session)).isTrue();
         } finally {

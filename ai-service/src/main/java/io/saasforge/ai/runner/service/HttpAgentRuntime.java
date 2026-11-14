@@ -32,7 +32,15 @@ public class HttpAgentRuntime implements AgentRuntime {
     public void run(Run request, Consumer<Event> emit) {
         var session = request.session();
         create(session);
-        var body = Map.of("text", request.text(), "contextToken", request.contextToken(), "model", session.model());
+        var body = Map.of(
+                "text",
+                request.text(),
+                "contextToken",
+                request.contextToken(),
+                "model",
+                session.model(),
+                "tools",
+                session.tools());
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 var response =

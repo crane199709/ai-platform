@@ -2444,8 +2444,8 @@ class PlatformIntegrationIT {
     @Test
     void mcpLongNativeNamesProduceStableProviderSafeAliases() {
         String base = "http://127.0.0.1:" + port;
-        String first = "a".repeat(127) + "x";
-        String second = "a".repeat(127) + "y";
+        String first = "orders." + "a".repeat(120) + "x";
+        String second = "orders." + "a".repeat(120) + "y";
         var tools = List.of(first, second).stream()
                 .map(name -> Map.of(
                         "name",
@@ -2860,57 +2860,71 @@ class PlatformIntegrationIT {
                 Map.of("enabled", true),
                 200);
         call(platform.gateway(), HttpMethod.POST, "/ai/skills/" + skill + "/publish", tokenA, Map.of(), 200);
-        String id = call(
-                        platform.gateway(),
-                        HttpMethod.POST,
-                        "/ai/conversations",
-                        tokenA,
-                        Map.of("title", "本地技能审计", "modelId", model),
-                        201)
-                .path("data")
-                .path("id")
-                .asText();
-        assertThat(sendMessage(id, "audit skill success", UUID.randomUUID().toString(), tokenA))
-                .contains("event:done", "displayName");
-        assertThat(sendMessage(id, "audit skill failure", UUID.randomUUID().toString(), tokenA))
-                .contains("event:done");
-        assertThat(sendMessage(id, "audit skill interrupted", UUID.randomUUID().toString(), tokenA))
-                .contains("event:error");
-        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
-            var completed = new ArrayList<JsonNode>();
-            var started = new ArrayList<JsonNode>();
-            for (String action : List.of("ai.tool.call", "ai.tool.start")) {
-                for (var event : call(
-                                platform.gateway(),
-                                HttpMethod.GET,
-                                "/iam/audit/events?action=" + action + "&resourceType=skillToolCall",
-                                tokenA,
-                                null,
-                                200)
-                        .path("data")) {
-                    if (event.path("detail").path("conversationId").asText().equals(id)) {
-                        (action.equals("ai.tool.call") ? completed : started).add(event);
-                        assertThat(event.toString())
-                                .doesNotContain(
-                                        "private-skill-instructions", "private-skill-result", "arguments", code);
+        try {
+            String id = call(
+                            platform.gateway(),
+                            HttpMethod.POST,
+                            "/ai/conversations",
+                            tokenA,
+                            Map.of("title", "本地技能审计", "modelId", model),
+                            201)
+                    .path("data")
+                    .path("id")
+                    .asText();
+            assertThat(sendMessage(id, "audit skill success", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:done", "displayName");
+            assertThat(sendMessage(id, "audit skill failure", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:done");
+            assertThat(sendMessage(
+                            id, "audit skill interrupted", UUID.randomUUID().toString(), tokenA))
+                    .contains("event:error");
+            Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+                var completed = new ArrayList<JsonNode>();
+                var started = new ArrayList<JsonNode>();
+                for (String action : List.of("ai.tool.call", "ai.tool.start")) {
+                    for (var event : call(
+                                    platform.gateway(),
+                                    HttpMethod.GET,
+                                    "/iam/audit/events?action=" + action + "&resourceType=skillToolCall",
+                                    tokenA,
+                                    null,
+                                    200)
+                            .path("data")) {
+                        if (event.path("detail").path("conversationId").asText().equals(id)) {
+                            (action.equals("ai.tool.call") ? completed : started).add(event);
+                            assertThat(event.toString())
+                                    .doesNotContain(
+                                            "private-skill-instructions", "private-skill-result", "arguments", code);
+                        }
                     }
                 }
-            }
-            assertThat(started).hasSize(3);
-            assertThat(completed).hasSize(3);
-            assertThat(completed.stream()
-                            .filter(e -> e.path("outcome").asText().equals("success"))
-                            .count())
-                    .isEqualTo(1);
-            assertThat(completed.stream()
-                            .filter(e -> e.path("outcome").asText().equals("failure"))
-                            .count())
-                    .isEqualTo(2);
-            assertThat(started.stream().map(e -> e.path("resourceId").asText()).toList())
-                    .containsExactlyInAnyOrderElementsOf(completed.stream()
-                            .map(e -> e.path("resourceId").asText())
-                            .toList());
-        });
+                assertThat(started).hasSize(3);
+                assertThat(completed).hasSize(3);
+                assertThat(completed.stream()
+                                .filter(e -> e.path("outcome").asText().equals("success"))
+                                .count())
+                        .isEqualTo(1);
+                assertThat(completed.stream()
+                                .filter(e -> e.path("outcome").asText().equals("failure"))
+                                .count())
+                        .isEqualTo(2);
+                assertThat(started.stream()
+                                .map(e -> e.path("resourceId").asText())
+                                .toList())
+                        .containsExactlyInAnyOrderElementsOf(completed.stream()
+                                .map(e -> e.path("resourceId").asText())
+                                .toList());
+            });
+        } finally {
+            call(
+                    platform.gateway(),
+                    HttpMethod.PUT,
+                    "/ai/skills/" + skill + "/draft",
+                    tokenA,
+                    Map.of("enabled", false),
+                    200);
+            call(platform.gateway(), HttpMethod.POST, "/ai/skills/" + skill + "/publish", tokenA, Map.of(), 200);
+        }
     }
 
     @Test
@@ -2947,7 +2961,7 @@ class PlatformIntegrationIT {
                                         "readOnly",
                                         true,
                                         "requiresApproval",
-                                        true))),
+                                        false))),
                         201)
                 .path("data")
                 .path("id")
@@ -2964,6 +2978,18 @@ class PlatformIntegrationIT {
                 .path("data")
                 .path("id")
                 .asText();
+        var stricter = (ObjectNode) call(base, HttpMethod.GET, "/platform/mcp/" + catalog, operator, null, 200)
+                .path("data")
+                .path("draft")
+                .deepCopy();
+        ((ObjectNode) stricter.path("tools").get(0)).put("requiresApproval", true);
+        call(base, HttpMethod.PUT, "/platform/mcp/" + catalog + "/draft", operator, stricter, 200);
+        call(base, HttpMethod.POST, "/platform/mcp/" + catalog + "/publish", operator, Map.of(), 200);
+        assertThat(call(platform.gateway(), HttpMethod.GET, "/ai/mcp/" + catalog, tokenA, null, 200)
+                        .path("data")
+                        .path("catalogVersion")
+                        .asInt())
+                .isEqualTo(1);
         String alias = mcpAlias(catalog, tokenA);
         runtime.toolProbes.put(UUID.fromString(id), request -> {
             int expected = request.text().endsWith("reject")

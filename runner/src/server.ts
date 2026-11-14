@@ -185,7 +185,7 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
         json(200, { cancelled: await runtime.cancel(sessionId) })
       else if (request.method === 'POST' && action === 'messages') {
         const body = await readJson(request)
-        keys(body, ['text', 'contextToken', 'model'])
+        keys(body, ['text', 'contextToken', 'model', 'tools'])
         if (
           typeof body.text !== 'string' ||
           !body.text.trim() ||
@@ -195,12 +195,14 @@ export function createRunnerServer(options: RunnerOptions): RunnerServer {
         )
           throw new RuntimeError('runner.invalidRequest', 400)
         if (body.model !== undefined) model(body.model)
+        const tools = body.tools === undefined ? undefined : parseTools(body.tools)
         runtime.exportSession(sessionId)
         if (runtime.busy) throw new RuntimeError('runner.tenantBusy', 409)
         const input: MessageInput = {
           text: body.text,
           contextToken: body.contextToken,
           model: body.model,
+          ...(tools === undefined ? {} : { tools }),
         }
         let terminal = false
         const emit = (event: { type: string; data: unknown }) => {

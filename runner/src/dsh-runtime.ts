@@ -318,14 +318,16 @@ export class DshRuntime implements AgentRuntime {
     this.pendingAbort = false
     let timeout: NodeJS.Timeout | undefined
     try {
+      const nextTools = input.tools ?? session.tools
       await this.initialize(
         input.model ?? session.model,
-        session.tools,
+        nextTools,
         session.instructions,
         session.skills,
       )
       if (this.pendingAbort || this.closed) throw new RuntimeError('runner.cancelled')
       session.model = input.model ?? session.model
+      session.tools = structuredClone(nextTools)
       const history = session.needsReplay ? session.transcript : []
       if (!session.runtimeId) {
         session.runtimeId = randomUUID()

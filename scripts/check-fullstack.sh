@@ -20,7 +20,8 @@ pathlib.Path(out,'source.json').write_text(json.dumps({'aiCommit':commit(ai),'pl
 EVIDENCE
 export AI_E2E_TLS_KEY="$out/provider-key.pem" AI_E2E_TLS_CERT="$out/provider-cert.pem"
 export AI_E2E_PROVIDER_READY="$out/provider-ready.json" AI_E2E_PROVIDER_EVIDENCE="$out/provider-evidence.json"
-rm -f "$AI_E2E_PROVIDER_READY"
+export AI_E2E_STREAM_RELEASE="$out/stream-release"
+rm -f "$AI_E2E_PROVIDER_READY" "$AI_E2E_STREAM_RELEASE"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -keyout "$AI_E2E_TLS_KEY" -out "$AI_E2E_TLS_CERT" -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' > "$out/tls.log" 2>&1
 rm -f "$out/trust.p12"
 keytool -importcert -noprompt -alias local-e2e -file "$AI_E2E_TLS_CERT" -keystore "$out/trust.p12" -storepass local-e2e-trust >> "$out/tls.log" 2>&1

@@ -1,6 +1,6 @@
 // Only external model/MCP boundaries are deterministic; Java, DSH and IAM stay real.
 import { createServer } from 'node:https'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 const evidence = { modelRequests: 0, mcpCalls: 0, streamedChunks: 0, modelAuthorizationValid: true }
 const server = createServer({ key: readFileSync(process.env.AI_E2E_TLS_KEY), cert: readFileSync(process.env.AI_E2E_TLS_CERT) }, async (req, res) => {
   let raw = ''; for await (const chunk of req) raw += chunk
@@ -26,8 +26,14 @@ const server = createServer({ key: readFileSync(process.env.AI_E2E_TLS_KEY), cer
       frame({ tool_calls: [{ index: 0, id: 'call-approval', type: 'function', function: { name, arguments: '{"query":"status"}' } }] })
       frame({}, 'tool_calls', { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })
     } else {
-      for (const content of ['真实 DSH ', last?.role === 'tool' ? '已完成只读工具查询。' : '分批回答已完成。']) {
+      for (const [index, content] of ['真实 DSH ', last?.role === 'tool' ? '已完成只读工具查询。' : '分批回答已完成。'].entries()) {
         frame({ content }); evidence.streamedChunks++
+        // 浏览器先确认部分正文与取消入口，再释放普通回答的后半段。
+        if (index === 0 && !String(lastUser).includes('APPROVAL_TOOL') && process.env.AI_E2E_STREAM_RELEASE) {
+          const deadline = Date.now() + 30000
+          while (!existsSync(process.env.AI_E2E_STREAM_RELEASE) && !res.destroyed && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+          if (existsSync(process.env.AI_E2E_STREAM_RELEASE)) unlinkSync(process.env.AI_E2E_STREAM_RELEASE)
+        }
         await new Promise((resolve) => setTimeout(resolve, 350))
       }
       frame({}, 'stop', { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 })

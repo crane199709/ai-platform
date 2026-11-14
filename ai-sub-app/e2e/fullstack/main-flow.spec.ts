@@ -10,14 +10,38 @@ for (const [label, width] of [
   test(`真实Shell登录、分批回答、MCP审批、历史与租户隔离 ${label}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     const errors: string[] = []
+    const deniedPaths = new Set([
+      '/api/ai/conversations',
+      '/api/ai/models',
+      '/api/ai/prompts/published',
+    ])
+    const deniedResponses = new Set<string>()
+    const deniedConsole = new Set<string>()
+    let verifyingDeniedTenant = false
     page.on('pageerror', (error) => errors.push(error.message))
     page.on('console', (message) => {
-      if (['error', 'warning'].includes(message.type())) errors.push(message.text())
+      if (!['error', 'warning'].includes(message.type())) return
+      const url = message.location().url
+      const path = url ? new URL(url).pathname : ''
+      if (
+        verifyingDeniedTenant &&
+        message.type() === 'error' &&
+        message.text() ===
+          'Failed to load resource: the server responded with a status of 403 (Forbidden)' &&
+        deniedPaths.has(path)
+      ) {
+        deniedConsole.add(path)
+        return
+      }
+      errors.push(message.text())
     })
     const remoteResponses: string[] = []
     page.on('response', (response) => {
       if (response.url().includes('5180/remoteEntry.js') && response.ok())
         remoteResponses.push(response.url())
+      const path = new URL(response.url()).pathname
+      if (verifyingDeniedTenant && response.status() === 403 && deniedPaths.has(path))
+        deniedResponses.add(path)
     })
     await page.goto('/login?redirect=/apps/ai/home')
     await page.locator('#tenant-account').fill('ai-member')
@@ -41,7 +65,9 @@ for (const [label, width] of [
     await page.getByLabel('消息', { exact: true }).fill('请验证真实流式回答')
     await page.getByRole('button', { name: '发送', exact: true }).click()
     await expect(page.getByLabel('消息记录')).toContainText('真实 DSH')
+    await expect(page.getByLabel('消息记录')).not.toContainText('真实 DSH 分批回答已完成。')
     await expect(page.getByRole('button', { name: '取消生成', exact: true })).toBeVisible()
+    writeFileSync(`${output}/stream-release`, 'continue')
     await expect(page.getByLabel('消息记录')).toContainText('真实 DSH 分批回答已完成。')
     await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
     await page.screenshot({ path: `${output}/chat-${label}.png`, fullPage: false })
@@ -96,6 +122,7 @@ for (const [label, width] of [
       .click()
     await expect(page.getByTestId(`conversation-${conversation}`)).toHaveCount(0)
     await page.getByTestId('tenant-switcher').click()
+    verifyingDeniedTenant = true
     await Promise.all([
       page.waitForURL((url) => url.pathname === '/'),
       page.getByRole('option', { name: 'AI 无授权租户', exact: true }).click(),
@@ -103,9 +130,11 @@ for (const [label, width] of [
     await expect(page.getByTestId('tenant-switcher')).toContainText('AI 无授权租户')
     await expect(page.getByRole('menuitem', { name: 'AI 工作台', exact: true })).toHaveCount(0)
     await page.goto('/apps/ai/home')
+    await expect(page.getByText('页面不存在', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '新建会话', exact: true })).toHaveCount(0)
     await expect(page.getByText('真实 DSH 分批回答已完成。', { exact: true })).toHaveCount(0)
     await page.screenshot({ path: `${output}/no-permission-${label}.png`, fullPage: false })
+    expect([...deniedConsole].filter((path) => !deniedResponses.has(path))).toEqual([])
     expect(errors).toEqual([])
     writeFileSync(
       `${output}/browser-${label}.json`,
@@ -115,6 +144,8 @@ for (const [label, width] of [
           title: await page.title(),
           width,
           consoleErrors: errors,
+          expectedForbiddenResponses: [...deniedResponses],
+          expectedForbiddenConsole: [...deniedConsole],
           remoteResponses,
           conversation,
           login: 'real IAM PKCE',

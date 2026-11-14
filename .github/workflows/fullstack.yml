@@ -93,6 +93,7 @@ jobs:
             ${{ runner.temp }}/ai-fullstack/*.json
             ${{ runner.temp }}/ai-fullstack/*.log
             ${{ runner.temp }}/ai-fullstack/*.prom
+            ${{ runner.temp }}/ai-fullstack/browser-results/
             ai-service/target/platform-it/*.sha256
             ai-service/target/platform-it/*.log
             ai-service/target/surefire-reports/

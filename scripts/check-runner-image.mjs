@@ -32,8 +32,9 @@ try {
   await docker('run', '--detach', '--rm', '--pull=never', '--name', name,
     '--read-only', '--user', '1000:1000', '--cpus', '1', '--memory', '384m', '--pids-limit', '128',
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-    '--tmpfs', '/runtime:rw,nosuid,size=64m,uid=1000,gid=1000,mode=0700',
-    '--tmpfs', '/tmp:rw,nosuid,size=64m,uid=1000,gid=1000,mode=0700',
+    // Official native binaries are integrity-checked and cached in TMPDIR before loading.
+    '--tmpfs', '/runtime:rw,nosuid,exec,size=64m,uid=1000,gid=1000,mode=0700',
+    '--tmpfs', '/tmp:rw,nosuid,exec,size=64m,uid=1000,gid=1000,mode=0700',
     '-p', '127.0.0.1::8181', '--add-host', 'host.docker.internal:host-gateway',
     '-e', 'AI_RUNNER_HOST=0.0.0.0', '-e', 'AI_RUNNER_PORT=8181', '-e', 'AI_RUNNER_MANAGEMENT_PORT=9091',
     '-e', 'AI_RUNNER_ROOT=/runtime/tenants', '-e', 'AI_RUNNER_SERVICE_TOKEN=image-contract-token',
@@ -67,7 +68,7 @@ try {
     import fs from 'node:fs'; import { createRequire } from 'node:module';
     const require=createRequire(import.meta.url);
     const binding=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))('node-addon-require-builtin').getBindingInfo();
-    console.log(JSON.stringify({uid:process.getuid(),platform:process.platform,arch:process.arch,binding,memoryMax:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),cpuMax:fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim(),limits:fs.readFileSync('/proc/${pid}/limits','utf8'),command:fs.readFileSync('/proc/${pid}/cmdline','utf8').split('\\0'),hasModelSecrets:Object.keys(process.env).some(k=>k.startsWith('MODEL_')||k.startsWith('AI_MCP_'))}));`))
+    console.log(JSON.stringify({uid:process.getuid(),platform:process.platform,arch:process.arch,binding,memoryMax:fs.readFileSync('/sys/fs/cgroup/memory.max','utf8').trim(),cpuMax:fs.readFileSync('/sys/fs/cgroup/cpu.max','utf8').trim(),limits:fs.readFileSync('/proc/${pid}/limits','utf8'),command:fs.readFileSync('/proc/${pid}/cmdline','utf8').split('\\0'),mounts:fs.readFileSync('/proc/mounts','utf8').split('\\n').map(line=>line.split(' ')).filter(parts=>['/runtime','/tmp'].includes(parts[1])).map(parts=>({path:parts[1],options:parts[3]})),hasModelSecrets:Object.keys(process.env).some(k=>k.startsWith('MODEL_')||k.startsWith('AI_MCP_'))}));`))
   assert.equal(details.uid, 1000)
   assert.equal(details.platform, 'linux')
   assert.equal(details.memoryMax, String(384 * 1024 * 1024))
@@ -76,6 +77,8 @@ try {
   assert.match(details.limits, /Max cpu time\s+120\s+120/)
   assert.ok(details.command.includes('--max-old-space-size=256'))
   assert.equal(details.hasModelSecrets, false)
+  assert.equal(details.mounts.length, 2)
+  assert.ok(details.mounts.every(mount => mount.options.split(',').includes('nosuid') && !mount.options.split(',').includes('noexec')))
   const inspect = JSON.parse(await docker('inspect', name))[0]
   assert.equal(inspect.HostConfig.ReadonlyRootfs, true)
   assert.deepEqual(inspect.HostConfig.CapDrop, ['ALL'])

@@ -22,14 +22,15 @@ Runner进程不继承模型/MCP密钥、用户JWT或用户home。只读官方pro
 | --- | --- |
 | `AI_RUNNER_BASE_URI` / `AI_RUNNER_SERVICE_TOKEN` | AI到固定Runner内网HTTP；令牌与Runner一致，不能复用Manifest/Ops/模型Key |
 | `AI_SERVICE_PROXY_URL` | Runner固定AI `/internal/runner` 地址；请求不能改URL |
-| `AI_MODEL_SECRET_REFERENCES` | AI允许解引用的环境变量名列表；目录DB只保存引用，原始Key仅AI可见 |
+| `AI_MODEL_SECRET_REFERENCES` | AI允许解引用的环境变量名列表；引用型模型的Key仅AI可见 |
+| `AI_MODEL_CREDENTIAL_KEY` | 加密模型目录中直接密钥的主密钥，Base64 32字节；必配，缺失启动失败；丢失后已加密密钥只能重录 |
 | `AI_MCP_SECRET_REFERENCES` | AI允许的MCP凭据变量列表；服务端按 `AI_MCP_<TENANT_UUID无连字符大写>_<CATALOG_UUID无连字符大写>` 派生命名空间，租户不能任填引用 |
 | `AI_MCP_TRUSTED_BUSINESS_ORIGINS` | 允许转发业务身份的准确HTTPS origin；外部MCP不接收用户JWT |
 | `FORGE_MANIFEST_TOKEN` | Operator登记的ai-service Service Credential，只用于公开平台服务协议 |
 | `FORGE_OPS_TOKEN` | AI实例健康接入状态的独立运维凭证；Platform Ops映射同值 |
 | `FORGE_BUSINESS_ZONE` | 与平台一致的显式时区，决定月配额/日快照；不能依赖主机默认时区 |
 
-[Secret样例](../deploy/kubernetes/secrets.example.yaml) 不参与kustomization，不含真实凭据。用环境的Secret/Vault控制器创建 `ai-service-secrets` 与 `ai-runner-identity`；不要把全部AI Secret通过共同 `envFrom` 注入Runner。Runner只有单独的服务身份Secret。模型/MCPKey轮换先更新AI Secret，重建AI实例后做本地/预发布回合验证，再撤销旧Key；不能把Key写进目录、前端、日志或镜像。
+[Secret样例](../deploy/kubernetes/secrets.example.yaml) 不参与kustomization，不含真实凭据。用环境的Secret/Vault控制器创建 `ai-service-secrets` 与 `ai-runner-identity`；不要把全部AI Secret通过共同 `envFrom` 注入Runner。Runner只有单独的服务身份Secret。模型/MCPKey轮换先更新AI Secret，重建AI实例后做本地/预发布回合验证，再撤销旧Key；不能把密钥明文写进目录、前端、日志或镜像。`AI_MODEL_CREDENTIAL_KEY` 是加密主密钥，不做轮换：更换它会让所有直接密钥模型无法解密，只能重新录入。
 
 ## 数据库与平台接入
 

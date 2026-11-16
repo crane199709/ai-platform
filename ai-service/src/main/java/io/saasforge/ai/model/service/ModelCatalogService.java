@@ -5,7 +5,9 @@ import io.saasforge.ai.model.entity.ModelEntry;
 import io.saasforge.ai.model.mapper.ModelMapper;
 import io.saasforge.ai.model.model.*;
 import io.saasforge.sdk.audit.AuditLog;
+import io.saasforge.sdk.core.UuidV7;
 import io.saasforge.sdk.core.api.ForgeException;
+import io.saasforge.sdk.core.api.FrameworkErrorCode;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
@@ -19,9 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ModelCatalogService {
     private final ModelMapper mapper;
+    private final ModelCredentialCipher cipher;
 
-    public ModelCatalogService(ModelMapper mapper) {
+    public ModelCatalogService(ModelMapper mapper, ModelCredentialCipher cipher) {
         this.mapper = mapper;
+        this.cipher = cipher;
     }
 
     public List<ModelResponse> list() {
@@ -40,6 +44,10 @@ public class ModelCatalogService {
     @AuditLog(action = "ai.model.create", resourceType = "model", resourceId = "#result.id()")
     public ModelResponse create(ModelRequest request) {
         var row = new ModelEntry();
+        row.setId(UuidV7.generate());
+        if (request.apiKey() == null && request.secretRef() == null) {
+            throw new ForgeException(FrameworkErrorCode.REQUEST_INVALID);
+        }
         fill(row, request);
         try {
             mapper.insert(row);
@@ -88,6 +96,7 @@ public class ModelCatalogService {
                 ModelProvider.valueOf(row.getProvider()),
                 row.getModelId(),
                 row.getBaseUrl(),
+                row.getCredentialKind() == null ? null : ModelCredentialKind.valueOf(row.getCredentialKind()),
                 capabilities,
                 ModelStatus.valueOf(row.getStatus()),
                 row.getContextWindow());
@@ -112,7 +121,18 @@ public class ModelCatalogService {
         row.setProvider(request.provider().name());
         row.setModelId(request.modelId());
         row.setBaseUrl(uri.toString());
-        row.setSecretRef(request.secretRef());
+        if (request.apiKey() != null && request.secretRef() != null) {
+            throw new ForgeException(FrameworkErrorCode.REQUEST_INVALID);
+        }
+        if (request.apiKey() != null) {
+            row.setCredentialKind(ModelCredentialKind.API_KEY.name());
+            row.setCredentialCipher(cipher.encrypt(request.apiKey(), row.getId()));
+            row.setSecretRef(null);
+        } else if (request.secretRef() != null) {
+            row.setCredentialKind(ModelCredentialKind.REFERENCE.name());
+            row.setSecretRef(request.secretRef());
+            row.setCredentialCipher(null);
+        }
         row.setCapabilities(
                 request.capabilities().stream().map(Enum::name).sorted().collect(Collectors.joining(",")));
         row.setStatus(request.status().name());

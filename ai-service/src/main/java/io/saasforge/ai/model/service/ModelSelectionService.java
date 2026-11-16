@@ -70,7 +70,9 @@ public class ModelSelectionService {
                 row.getProvider(),
                 row.getModelId(),
                 URI.create(row.getBaseUrl()),
+                row.getCredentialKind(),
                 row.getSecretRef(),
+                row.getCredentialCipher(),
                 row.getContextWindow());
     }
 

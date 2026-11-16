@@ -11,7 +11,8 @@ public record ModelRequest(
         String modelId,
 
         @NotBlank @Size(max = 500) String baseUrl,
-        @NotBlank @Pattern(regexp = "[A-Z][A-Z0-9_]{0,127}") String secretRef,
+        @Pattern(regexp = "[!-~]+") @Size(max = 8192) String apiKey,
+        @Pattern(regexp = "[A-Z][A-Z0-9_]{0,127}") String secretRef,
         @NotEmpty Set<@NotNull ModelCapability> capabilities,
         @NotNull ModelStatus status,
         @NotNull @Min(1) Integer contextWindow) {

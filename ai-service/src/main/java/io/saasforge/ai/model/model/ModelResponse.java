@@ -9,6 +9,7 @@ public record ModelResponse(
         ModelProvider provider,
         String modelId,
         String baseUrl,
+        ModelCredentialKind credentialKind,
         Set<ModelCapability> capabilities,
         ModelStatus status,
         int contextWindow) {}

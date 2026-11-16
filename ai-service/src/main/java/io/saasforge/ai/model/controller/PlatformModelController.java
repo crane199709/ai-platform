@@ -36,7 +36,7 @@ public class PlatformModelController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "登记平台模型与密钥引用")
+    @Operation(summary = "登记平台模型与凭据")
     public ApiResponse<ModelResponse> create(@Valid @RequestBody ModelRequest request) {
         return ApiResponse.created(catalog.create(request));
     }

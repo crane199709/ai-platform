@@ -1,5 +1,5 @@
 SELECT set_config('app.tenant_id','019a2525-0011-7000-8000-000000000000',true);
-INSERT INTO ai_model_catalog (id,name,provider,model_id,base_url,secret_ref,capabilities,status,context_window) VALUES ('019a2525-0011-7000-8000-000000000010','retained catalog','DEEPSEEK','test','https://models.example.test/v1','TEST_REF','CHAT','ENABLED',65536);
+INSERT INTO ai_model_catalog (id,name,provider,model_id,base_url,secret_ref,credential_kind,capabilities,status,context_window) VALUES ('019a2525-0011-7000-8000-000000000010','retained catalog','DEEPSEEK','test','https://models.example.test/v1','TEST_REF','REFERENCE','CHAT','ENABLED',65536);
 INSERT INTO ai_skill_catalog (id,code,name,description,content,status,published_version) VALUES ('019a2525-0011-7000-8000-000000000011','cleanup-catalog','retained catalog','','platform skill','REVIEWED',1);
 INSERT INTO ai_skill_version (id,catalog_id,version,name,description,content) VALUES ('019a2525-0011-7000-8000-000000000012','019a2525-0011-7000-8000-000000000011',1,'retained catalog','','platform skill');
 INSERT INTO ai_mcp_catalog (id,name,configuration,published_version,enabled) VALUES ('019a2525-0011-7000-8000-000000000013','retained catalog','{}',1,false);

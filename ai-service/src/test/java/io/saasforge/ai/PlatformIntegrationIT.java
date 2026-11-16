@@ -140,6 +140,7 @@ class PlatformIntegrationIT {
         registry.add("forge.ops.token", () -> PlatformEnvironment.OPS);
         registry.add("forge.mq.enabled", () -> true);
         registry.add("CONVERSATION_TEST_KEY", MODEL_SECRET::get);
+        registry.add("ai.model-credential.key", () -> ModelCredentialCipherTest.TEST_KEY);
         registry.add("ai.mcp.trusted-business-origins", () -> "https://business.example.test");
         registry.add(
                 "ai.mcp.secret-references",
@@ -2338,6 +2339,378 @@ class PlatformIntegrationIT {
                         .path("data"))
                 .hasSize(3);
         call(base, HttpMethod.POST, "/platform/skills/" + id + "/rollback", operator, Map.of("version", 999), 404);
+    }
+
+    @Test
+    void operatorCreatesEncryptedModelCredentialWithoutExposingIt() {
+        String base = "http://127.0.0.1:" + port;
+        var payload = credentialModelPayload();
+        payload.put("apiKey", "test-direct-provider-secret");
+        var created = call(base, HttpMethod.POST, "/platform/models", operator, payload, 201);
+        String id = created.path("data").path("id").asText();
+        assertThat(created.path("data").path("credentialKind").asText()).isEqualTo("API_KEY");
+        assertThat(call(base, HttpMethod.GET, "/platform/models/" + id, operator, null, 200)
+                        .toString())
+                .doesNotContain("test-direct-provider-secret", "secretRef", "credentialCipher", "apiKey");
+        assertThat(call(base, HttpMethod.GET, "/platform/models", operator, null, 200)
+                        .toString())
+                .doesNotContain("test-direct-provider-secret", "secretRef", "credentialCipher", "apiKey");
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var events = call(
+                            platform.iam(),
+                            HttpMethod.GET,
+                            "/platform/audit/events?action=ai.model.create&resourceId=" + id,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(events).hasSize(1);
+            assertThat(events.get(0).path("detail").toString()).isEqualTo("{}");
+            assertThat(events.toString())
+                    .doesNotContain("test-direct-provider-secret", "secretRef", "credentialCipher", "apiKey");
+        });
+    }
+
+    @Test
+    void directCredentialIsPreservedReplacedAndConvertedOnTheNextTurn() throws Exception {
+        String base = "http://127.0.0.1:" + port;
+        var payload = credentialModelPayload();
+        payload.put("apiKey", "test-direct-provider-secret");
+        String model = call(base, HttpMethod.POST, "/platform/models", operator, payload, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenA,
+                Map.of("modelIds", List.of(model)),
+                200);
+        String conversation = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Direct credential lifecycle", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var statuses = new CopyOnWriteArrayList<Integer>();
+        runtime.toolProbes.put(
+                UUID.fromString(conversation),
+                run -> statuses.add(runtime.proxy(
+                        run,
+                        run.contextToken(),
+                        TENANT_A.toString(),
+                        Map.of(
+                                "model",
+                                model,
+                                "stream",
+                                true,
+                                "max_tokens",
+                                10,
+                                "messages",
+                                List.of(Map.of("role", "user", "content", "direct rotation"))))));
+        int before = providerSecrets.size();
+        try {
+            MODEL_SECRET.set("test-direct-provider-secret");
+            sendMessage(conversation, "direct before edit", UUID.randomUUID().toString(), tokenA);
+            payload.remove("apiKey");
+            payload.put("name", "Updated without credential");
+            var retained = call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200)
+                    .path("data");
+            assertThat(retained.path("credentialKind").asText()).isEqualTo("API_KEY");
+            assertThat(retained.path("name").asText()).isEqualTo("Updated without credential");
+            sendMessage(conversation, "direct after edit", UUID.randomUUID().toString(), tokenA);
+            payload.put("apiKey", "test-rotated-direct-secret");
+            call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200);
+            MODEL_SECRET.set("test-rotated-direct-secret");
+            sendMessage(conversation, "direct after rotation", UUID.randomUUID().toString(), tokenA);
+            payload.remove("apiKey");
+            payload.put("secretRef", "CONVERSATION_TEST_KEY");
+            assertThat(call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200)
+                            .path("data")
+                            .path("credentialKind")
+                            .asText())
+                    .isEqualTo("REFERENCE");
+            sendMessage(
+                    conversation,
+                    "reference after conversion",
+                    UUID.randomUUID().toString(),
+                    tokenA);
+            payload.remove("secretRef");
+            payload.put("apiKey", "test-second-direct-secret");
+            assertThat(call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200)
+                            .path("data")
+                            .path("credentialKind")
+                            .asText())
+                    .isEqualTo("API_KEY");
+            MODEL_SECRET.set("test-second-direct-secret");
+            sendMessage(
+                    conversation, "direct after reconversion", UUID.randomUUID().toString(), tokenA);
+            assertThat(statuses).containsExactly(200, 200, 200, 200, 200);
+            assertThat(providerSecrets.subList(before, providerSecrets.size()))
+                    .containsExactly(
+                            "test-direct-provider-secret",
+                            "test-direct-provider-secret",
+                            "test-rotated-direct-secret",
+                            "test-rotated-direct-secret",
+                            "test-second-direct-secret");
+            assertThat(JsonMapper.builder()
+                            .build()
+                            .writeValueAsString(runtime.requests.stream()
+                                    .filter(run ->
+                                            run.session().sessionId().toString().equals(conversation))
+                                    .toList()))
+                    .doesNotContain(
+                            "test-direct-provider-secret",
+                            "test-rotated-direct-secret",
+                            "test-second-direct-secret",
+                            "CONVERSATION_TEST_KEY",
+                            "credentialCipher");
+            Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+                var events = call(
+                                platform.iam(),
+                                HttpMethod.GET,
+                                "/platform/audit/events?action=ai.model.update&resourceId=" + model,
+                                operator,
+                                null,
+                                200)
+                        .path("data");
+                assertThat(events).hasSize(4);
+                for (var event : events) {
+                    assertThat(event.path("detail").toString()).isEqualTo("{}");
+                }
+                assertThat(events.toString())
+                        .doesNotContain(
+                                "test-direct-provider-secret",
+                                "test-rotated-direct-secret",
+                                "test-second-direct-secret",
+                                "CONVERSATION_TEST_KEY",
+                                "credentialCipher",
+                                "apiKey");
+            });
+        } finally {
+            MODEL_SECRET.set("test-provider-secret");
+            runtime.toolProbes.remove(UUID.fromString(conversation));
+        }
+    }
+
+    @Test
+    void referenceCredentialCreatedBeforeMigrationStillCompletesAModelTurn() throws Exception {
+        String model = "019a2525-0900-7000-8000-000000000091";
+        assertThat(call("http://127.0.0.1:" + port, HttpMethod.GET, "/platform/models/" + model, operator, null, 200)
+                        .path("data")
+                        .path("credentialKind")
+                        .asText())
+                .isEqualTo("REFERENCE");
+        call(
+                platform.gateway(),
+                HttpMethod.PUT,
+                "/ai/models/selection",
+                tokenA,
+                Map.of("modelIds", List.of(model)),
+                200);
+        String conversation = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Migrated reference", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        var statuses = new CopyOnWriteArrayList<Integer>();
+        runtime.toolProbes.put(
+                UUID.fromString(conversation),
+                run -> statuses.add(runtime.proxy(
+                        run,
+                        run.contextToken(),
+                        TENANT_A.toString(),
+                        Map.of(
+                                "model",
+                                model,
+                                "stream",
+                                true,
+                                "max_tokens",
+                                10,
+                                "messages",
+                                List.of(Map.of("role", "user", "content", "migrated reference"))))));
+        int before = providerSecrets.size();
+        try {
+            sendMessage(conversation, "migrated reference", UUID.randomUUID().toString(), tokenA);
+            assertThat(statuses).containsExactly(200);
+            assertThat(providerSecrets.subList(before, providerSecrets.size())).containsExactly("test-provider-secret");
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(conversation));
+        }
+    }
+
+    @Test
+    @Sql("/platform/model-credential-failures.sql")
+    void unavailableCredentialsReturnTheSameSafe503Envelope() throws Exception {
+        String base = "http://127.0.0.1:" + port;
+        var payload = credentialModelPayload();
+        payload.put("secretRef", "CONVERSATION_TEST_KEY");
+        String reference = call(base, HttpMethod.POST, "/platform/models", operator, payload, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        var cases = new ArrayList<String>();
+        cases.add("019a2525-0900-7000-8000-000000000092");
+        cases.add("019a2525-0900-7000-8000-000000000093");
+        cases.add(reference);
+        var failures = new CopyOnWriteArrayList<JsonNode>();
+        int before = providerSecrets.size();
+        try {
+            MODEL_SECRET.set("");
+            for (String model : cases) {
+                call(
+                        platform.gateway(),
+                        HttpMethod.PUT,
+                        "/ai/models/selection",
+                        tokenA,
+                        Map.of("modelIds", List.of(model)),
+                        200);
+                String conversation = call(
+                                platform.gateway(),
+                                HttpMethod.POST,
+                                "/ai/conversations",
+                                tokenA,
+                                Map.of("title", "Unavailable credential", "modelId", model),
+                                201)
+                        .path("data")
+                        .path("id")
+                        .asText();
+                runtime.toolProbes.put(UUID.fromString(conversation), run -> {
+                    var response = PlatformEnvironment.client(runtime.serviceBase)
+                            .post()
+                            .uri("/internal/runner/chat/completions")
+                            .header("Authorization", "Bearer " + run.contextToken())
+                            .header("X-AI-Tenant-Id", TENANT_A.toString())
+                            .header("X-AI-Session-Id", conversation)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(Map.of(
+                                    "model",
+                                    model,
+                                    "stream",
+                                    true,
+                                    "max_tokens",
+                                    10,
+                                    "messages",
+                                    List.of(Map.of("role", "user", "content", "unavailable credential"))))
+                            .exchange((req, res) -> {
+                                assertThat(res.getStatusCode().value()).isEqualTo(503);
+                                return res.bodyTo(JsonNode.class);
+                            });
+                    failures.add(response);
+                });
+                try {
+                    sendMessage(
+                            conversation,
+                            "unavailable credential",
+                            UUID.randomUUID().toString(),
+                            tokenA);
+                } finally {
+                    runtime.toolProbes.remove(UUID.fromString(conversation));
+                }
+            }
+            assertThat(failures).hasSize(3);
+            for (var failure : failures) {
+                assertThat(failure.path("code").asText()).isEqualTo("runner.secretUnavailable");
+                assertThat(failure.toString())
+                        .doesNotContain("CONVERSATION_TEST_KEY", "credentialCipher", "GCM", "v1:");
+            }
+            assertThat(failures.get(0).path("message"))
+                    .isEqualTo(failures.get(1).path("message"));
+            assertThat(providerSecrets).hasSize(before);
+        } finally {
+            MODEL_SECRET.set("test-provider-secret");
+        }
+    }
+
+    @Test
+    void invalidCredentialWritesReturnRequestInvalidWithoutEchoingSecrets() {
+        String base = "http://127.0.0.1:" + port;
+        var payload = credentialModelPayload();
+        assertThat(call(base, HttpMethod.POST, "/platform/models", operator, payload, 400)
+                        .path("code")
+                        .asText())
+                .isEqualTo("request.invalid");
+        payload.put("apiKey", "test-direct-provider-secret");
+        payload.put("secretRef", "CONVERSATION_TEST_KEY");
+        var both = call(base, HttpMethod.POST, "/platform/models", operator, payload, 400);
+        assertThat(both.path("code").asText()).isEqualTo("request.invalid");
+        assertThat(both.toString()).doesNotContain("test-direct-provider-secret", "CONVERSATION_TEST_KEY");
+        payload.remove("secretRef");
+        String id = call(base, HttpMethod.POST, "/platform/models", operator, payload, 201)
+                .path("data")
+                .path("id")
+                .asText();
+        payload.put("secretRef", "CONVERSATION_TEST_KEY");
+        assertThat(call(base, HttpMethod.PUT, "/platform/models/" + id, operator, payload, 400)
+                        .path("code")
+                        .asText())
+                .isEqualTo("request.invalid");
+        payload.remove("secretRef");
+        for (String invalid : List.of("", "contains space", "key\nvalue", "密钥", "x".repeat(8193))) {
+            payload.put("apiKey", invalid);
+            for (var method : List.of(HttpMethod.POST, HttpMethod.PUT)) {
+                var rejected = call(
+                        base,
+                        method,
+                        method == HttpMethod.POST ? "/platform/models" : "/platform/models/" + id,
+                        operator,
+                        payload,
+                        400);
+                assertThat(rejected.path("code").asText()).isEqualTo("request.invalid");
+                if (!invalid.isEmpty()) {
+                    assertThat(rejected.toString()).doesNotContain(invalid);
+                }
+            }
+        }
+        Awaitility.await().atMost(Duration.ofSeconds(60)).untilAsserted(() -> {
+            var events = call(
+                            platform.iam(),
+                            HttpMethod.GET,
+                            "/platform/audit/events?action=ai.model.update&resourceId=" + id,
+                            operator,
+                            null,
+                            200)
+                    .path("data");
+            assertThat(events).hasSize(1);
+            assertThat(events.get(0).path("outcome").asText()).isEqualTo("failure");
+            assertThat(events.get(0).path("detail").toString()).isEqualTo("{}");
+            assertThat(events.toString())
+                    .doesNotContain(
+                            "test-direct-provider-secret",
+                            "CONVERSATION_TEST_KEY",
+                            "contains space",
+                            "key\nvalue",
+                            "密钥",
+                            "x".repeat(8193));
+        });
+    }
+
+    private Map<String, Object> credentialModelPayload() {
+        return new HashMap<>(Map.of(
+                "name",
+                "Direct credential " + UUID.randomUUID(),
+                "provider",
+                "OPENAI_COMPATIBLE",
+                "modelId",
+                "conversation-credential-" + UUID.randomUUID(),
+                "baseUrl",
+                "https://models.example.test/v1",
+                "capabilities",
+                List.of("CHAT", "TOOLS"),
+                "status",
+                "ENABLED",
+                "contextWindow",
+                65536));
     }
 
     @Test

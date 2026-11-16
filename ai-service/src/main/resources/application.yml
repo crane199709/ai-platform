@@ -72,6 +72,8 @@ mybatis-plus:
   mapper-locations: classpath*:/*/mapper/**/*.xml
 
 ai:
+  model-credential:
+    key: ${AI_MODEL_CREDENTIAL_KEY}
   runner:
     base-uri: ${AI_RUNNER_BASE_URI}
     service-token: ${AI_RUNNER_SERVICE_TOKEN}

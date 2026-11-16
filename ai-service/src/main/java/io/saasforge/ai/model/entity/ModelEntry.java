@@ -1,5 +1,7 @@
 package io.saasforge.ai.model.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.saasforge.sdk.tenant.AuditableEntity;
@@ -22,7 +24,15 @@ public class ModelEntry extends AuditableEntity {
     private String provider;
     private String modelId;
     private String baseUrl;
+
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String secretRef;
+
+    private String credentialKind;
+
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String credentialCipher;
+
     private String capabilities;
     private String status;
     private Integer contextWindow;
@@ -65,6 +75,22 @@ public class ModelEntry extends AuditableEntity {
 
     public void setSecretRef(String value) {
         this.secretRef = value;
+    }
+
+    public String getCredentialKind() {
+        return credentialKind;
+    }
+
+    public void setCredentialKind(String value) {
+        this.credentialKind = value;
+    }
+
+    public String getCredentialCipher() {
+        return credentialCipher;
+    }
+
+    public void setCredentialCipher(String value) {
+        this.credentialCipher = value;
     }
 
     public String getCapabilities() {

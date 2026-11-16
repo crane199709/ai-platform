@@ -91,6 +91,7 @@ class FullStackIT {
         registry.add("ai.runner.service-token", () -> "fullstack-runner-service-identity");
         registry.add("ai.model-proxy.secret-references", () -> "FULLSTACK_MODEL_KEY");
         registry.add("FULLSTACK_MODEL_KEY", () -> "deterministic-local-model-key");
+        registry.add("ai.model-credential.key", () -> ModelCredentialCipherTest.TEST_KEY);
         registry.add("management.server.port", () -> managementPort);
     }
 

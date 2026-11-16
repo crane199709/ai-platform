@@ -1,5 +1,8 @@
 package io.saasforge.ai.runner.service;
 
+import io.saasforge.ai.model.model.ModelCredentialKind;
+import io.saasforge.ai.model.service.ModelCredentialCipher;
+import io.saasforge.ai.model.service.ModelRuntimeConfiguration;
 import io.saasforge.ai.model.service.ModelSelectionService;
 import io.saasforge.ai.runner.config.ModelProxyProperties;
 import io.saasforge.ai.usage.service.UsageService;
@@ -15,6 +18,7 @@ import tools.jackson.databind.node.ObjectNode;
 @Service
 public class RunnerModelProxyService {
     private final ModelSelectionService models;
+    private final ModelCredentialCipher cipher;
     private final Environment environment;
     private final ModelProxyProperties properties;
     private final ProviderTransport transport;
@@ -28,7 +32,9 @@ public class RunnerModelProxyService {
             ProviderTransport transport,
             ModelProxyProperties properties,
             UsageService usage,
-            RunnerCapabilityService capabilities) {
+            RunnerCapabilityService capabilities,
+            ModelCredentialCipher cipher) {
+        this.cipher = cipher;
         this.capabilities = capabilities;
         this.properties = properties;
         this.usage = usage;
@@ -57,16 +63,6 @@ public class RunnerModelProxyService {
                 || json.writeValueAsBytes(request).length > 1048576) {
             throw new ForgeException(RunnerErrorCode.INVALID_MODEL_REQUEST);
         }
-        if (!properties.secretReferences().contains(config.secretReference())) {
-            throw new ForgeException(RunnerErrorCode.SECRET_UNAVAILABLE);
-        }
-        String secret = environment.getProperty(config.secretReference());
-        if (secret == null
-                || secret.isBlank()
-                || secret.length() > 8192
-                || secret.chars().anyMatch(c -> c < 33 || c > 126)) {
-            throw new ForgeException(RunnerErrorCode.SECRET_UNAVAILABLE);
-        }
         ObjectNode body = ((ObjectNode) request).deepCopy();
         body.put("model", config.modelId());
         body.put("max_tokens", output);
@@ -75,7 +71,8 @@ public class RunnerModelProxyService {
         // 仅在尚未打开提供方响应流的明确瞬时 HTTP 状态下重试；不重放已输出内容或工具。
         for (int attempt = 0; attempt < 3; attempt++) {
             capabilities.requireActive(capability, "model:chat");
-            models.resolveForUse(capability.modelId());
+            var current = models.resolveForUse(capability.modelId());
+            String secret = credential(current);
             usage.modelAttempt(capability.turnId());
             var response = transport.open(endpoint, secret, json.writeValueAsString(body));
             if (response.status() == 200 && response.contentType().startsWith("text/event-stream")) {
@@ -101,5 +98,30 @@ public class RunnerModelProxyService {
             }
         }
         throw new ForgeException(RunnerErrorCode.UNAVAILABLE);
+    }
+
+    private String credential(ModelRuntimeConfiguration config) {
+        try {
+            String secret;
+            if (ModelCredentialKind.API_KEY.name().equals(config.credentialKind())) {
+                secret = cipher.decrypt(config.credentialCipher(), config.catalogId());
+            } else if (ModelCredentialKind.REFERENCE.name().equals(config.credentialKind())
+                    && config.secretReference() != null
+                    && properties.secretReferences().contains(config.secretReference())) {
+                secret = environment.getProperty(config.secretReference());
+            } else {
+                throw new IllegalStateException();
+            }
+            if (secret == null
+                    || secret.isBlank()
+                    || secret.length() > 8192
+                    || secret.chars().anyMatch(c -> c < 33 || c > 126)) {
+                throw new IllegalStateException();
+            }
+            return secret;
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            // 不把解密或环境变量失败原因带入异常链，防止运行时错误成为凭据探测信号。
+            throw new ForgeException(RunnerErrorCode.SECRET_UNAVAILABLE);
+        }
     }
 }

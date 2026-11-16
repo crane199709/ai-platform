@@ -111,7 +111,9 @@ test('真实平台控制台新增、保留凭据编辑和禁用模型', async ({
   expect(disabledModel).toMatchObject({ status: 'DISABLED', credentialKind: 'API_KEY' })
   assertRedacted(disabledModel)
   await expect(confirmation).not.toBeVisible()
-  await expect(page.getByTestId(`ai-model-status-${model.id}`)).not.toBeChecked()
+  await expect(
+    page.getByTestId(`ai-model-status-${model.id}`).getByRole('switch'),
+  ).not.toBeChecked()
   await page.screenshot({ path: `${output}/platform-model-disabled.png`, fullPage: false })
   expect(errors).toEqual([])
   writeFileSync(

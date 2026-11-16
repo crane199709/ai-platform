@@ -309,7 +309,7 @@ class FullStackIT {
         for (String url : List.of(
                 "http://127.0.0.1:" + runnerPort + "/ready",
                 "http://127.0.0.1:5180/remoteEntry.js",
-                "http://localhost:5174/",
+                "http://127.0.0.1:5174/",
                 "http://127.0.0.1:" + consolePort + "/")) {
             Awaitility.await()
                     .alias("HTTP readiness " + url)

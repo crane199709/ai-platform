@@ -60,7 +60,11 @@ test('真实平台控制台新增、保留凭据编辑和禁用模型', async ({
   await expect(dialog).not.toBeVisible()
   const row = page.getByRole('row').filter({ hasText: name })
   await expect(row).toContainText('直接密钥')
-  await page.screenshot({ path: `${output}/platform-model-created.png`, fullPage: false })
+  await page.screenshot({
+    path: `${output}/platform-model-created.png`,
+    fullPage: false,
+    animations: 'disabled',
+  })
   const reloaded = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === modelsPath && response.request().method() === 'GET',
@@ -94,7 +98,11 @@ test('真实平台控制台新增、保留凭据编辑和禁用模型', async ({
   await page.getByTestId(`ai-model-status-${model.id}`).click()
   const confirmation = page.getByRole('dialog', { name: `禁用模型：${editedName}`, exact: true })
   await expect(confirmation).toContainText('禁用后所有租户的后续模型调用都会失效')
-  await page.screenshot({ path: `${output}/platform-model-disable-confirm.png`, fullPage: false })
+  await page.screenshot({
+    path: `${output}/platform-model-disable-confirm.png`,
+    fullPage: false,
+    animations: 'disabled',
+  })
   const disabled = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === `${modelsPath}/${model.id}` &&
@@ -114,7 +122,11 @@ test('真实平台控制台新增、保留凭据编辑和禁用模型', async ({
   await expect(
     page.getByTestId(`ai-model-status-${model.id}`).getByRole('switch'),
   ).not.toBeChecked()
-  await page.screenshot({ path: `${output}/platform-model-disabled.png`, fullPage: false })
+  await page.screenshot({
+    path: `${output}/platform-model-disabled.png`,
+    fullPage: false,
+    animations: 'disabled',
+  })
   expect(errors).toEqual([])
   writeFileSync(
     `${output}/platform-model-browser.json`,

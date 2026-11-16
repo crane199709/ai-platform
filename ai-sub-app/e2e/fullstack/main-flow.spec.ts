@@ -99,9 +99,12 @@ for (const [label, width] of [
     await page.goto('/apps/ai/home')
     const tenantResponse = await tenantList
     expect((await tenantResponse.json()).data).toEqual([])
-    const otherTenant = await page.request.get(`/api/ai/conversations/${conversation}`, {
-      headers: { authorization: tenantResponse.request().headers().authorization },
-    })
+    const otherTenant = await page.request.get(
+      `http://127.0.0.1:5174/api/ai/conversations/${conversation}`,
+      {
+        headers: { authorization: tenantResponse.request().headers().authorization },
+      },
+    )
     expect(otherTenant.status()).toBe(404)
     await expect(page.getByTestId(`conversation-${conversation}`)).toHaveCount(0)
     await expect(page.getByText(`真实链路-${label}`, { exact: true })).toHaveCount(0)

@@ -1,6 +1,6 @@
 # 平台模型目录的凭据管理
 
-状态：设计已确认，待实现。页面在 SaaS Forge 平台控制台，功能规格与验收见其 `.scratch/platform-model-management/spec.md`（本地路径 `/Users/liuhuan/workspace/coding/saas-forge/.scratch/platform-model-management/spec.md`）。
+状态：后端工单 01/02 已实现并完成本地验收，真实平台控制台与 Tenant Shell 联调通过。页面在 SaaS Forge 平台控制台，功能规格与验收见其 `.scratch/platform-model-management/spec.md`（本地路径 `/Users/liuhuan/workspace/coding/saas-forge/.scratch/platform-model-management/spec.md`）。
 
 ## 问题
 
@@ -129,3 +129,9 @@ ALTER TABLE ai_model_catalog ADD CONSTRAINT ai_model_catalog_credential_check CH
 - 主密钥丢失后所有 `API_KEY` 模型不可用，只能重新录入；没有恢复手段。
 - 数据库备份恢复会带出密文，安全性依赖主密钥不随备份流出；备份策略与密钥保管需要一并检查。
 - 迁移不可逆地放开了 `secret_ref` 的空值约束，读取路径必须同时覆盖两种凭据，任何新代码都不能假设 `secret_ref` 非空。
+
+## 本地验收结果（2026-11-16）
+
+后端实际迁移为 `V12__model_credentials.sql`。从 `ai-service` 执行 Maven wrapper（根目录没有 wrapper）：服务安装与格式检查通过，`PlatformIntegrationIT` 54/54；完整 `scripts/check-fullstack.sh` 通过 `FullStackIT` 2/2 与浏览器 3/3。控制台真实 API Key 新增、留空保留编辑、确认禁用及响应脱敏通过；原引用型模型的真实 Tenant Shell → Runner → HTTPS 模型/MCP 回归、权限隔离与用量计数保持通过。
+
+被测后端提交 `56f5bf9e48c7cd71c97efa1bed49c6c0092d1bee`，SaaS Forge 前端提交 `4831e933221a57eccd470adb7995ac60701eebf0`；运行时 `source.json` 与三份平台运行包 SHA 分别记录源码与制品。命令、环境问题修正、截图和证据见 [工单 02 的 Answer](issues/02-deployment-and-contract-docs.md)。仅完成本地验收，未声明远端 CI 或真实供应商验证。

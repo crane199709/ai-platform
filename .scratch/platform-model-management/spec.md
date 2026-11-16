@@ -65,7 +65,7 @@
 
 ## 存储与加密
 
-`V10` 迁移：
+`V12__model_credentials.sql` 迁移（V10/V11 已被既有迁移占用）：
 
 ```sql
 ALTER TABLE ai_model_catalog ADD COLUMN credential_kind varchar(16) NOT NULL DEFAULT 'REFERENCE';

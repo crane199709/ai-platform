@@ -14,7 +14,7 @@
 
 `bash scripts/check.sh platform`需要Docker和`AI_FORGE_RUNTIME_REPOSITORY`中的真实IAM/Platform/Gateway `0.2.0-SNAPSHOT`可执行jar。它通过随机端口和临时PostgreSQL/Redis/RocketMQ运行HTTP/MQ验收，无平台实现类依赖、不跳过缺失制品。测试产物SHA与日志在`ai-service/target/platform-it`。
 
-`bash scripts/check-fullstack.sh`（或`check.sh fullstack`）额外需要`AI_FORGE_SOURCE`指向配套SaaS Forge源码/已安装前端workspace依赖，构建并运行真正的`frontend/apps/tenant-app` Shell。测试经App Registry/Module Federation加载AI远程模块，真实IAM登录/PKCE、Gateway、AI、Runner/DSH、审批、持久化与用量回传贯通。仅模型/外部MCP边界使用本地确定性HTTPS。测试TLS信任只通过测试JVM truststore，不弱化主代码HTTPS、Secret allowlist或授权链。
+`bash scripts/check-fullstack.sh`（或`check.sh fullstack`）额外需要`AI_FORGE_SOURCE`指向配套SaaS Forge源码/已安装前端workspace依赖，构建并运行真正的`frontend/apps/tenant-app` Shell与`frontend/apps/platform-console`。平台控制台使用真实IAM签发的Operator会话，验证新增API Key模型、列表脱敏、留空保留编辑与确认禁用，不拦截模型HTTP。测试经App Registry/Module Federation加载AI远程模块，真实IAM登录/PKCE、Gateway、AI、Runner/DSH、审批、持久化与用量回传贯通。仅模型/外部MCP边界使用本地确定性HTTPS。测试TLS信任只通过测试JVM truststore，不弱化主代码HTTPS、Secret allowlist或授权链。
 
 ```bash
 AI_MAVEN_REPOSITORY=/private/path/runtime-m2 \
@@ -24,13 +24,15 @@ AI_E2E_OUTPUT=/tmp/ai-fullstack \
   bash scripts/check-fullstack.sh
 ```
 
-默认两宽1440/1024，Chromium。产物包含真实Shell截图、Playwright报告/失败trace、公开用量与聚合指标；不要上传生成的TLS私钥、p12或生产Secret。Browser plugin not available，因此使用仓库现有Playwright。mocked TenantClient/DevHost的交互和视觉用例是局部验证，不能替代该门禁。
+默认两宽1440/1024，Chromium。产物包含真实Shell与平台控制台截图、Playwright报告/失败trace、公开用量与聚合指标；不要上传生成的TLS私钥、p12、含临时Operator会话的`browser-env.json`或生产Secret。Browser plugin not available，因此使用仓库现有Playwright。mocked TenantClient/DevHost的交互和视觉用例是局部验证，不能替代该门禁。
 
 普通回答的本地提供方发出首段后等待浏览器确认；用例先断言部分正文与取消入口可见、完整回答尚未出现，再释放后半段和结束帧。这样可检测中间代理缓冲整段响应的问题。无授权租户的负向阶段仅允许已关联真实403响应的三个AI读取路径产生预期网络日志，其余控制台错误仍失败；对应路径保存在`browser-*.json`，不会一概忽略403。
 
-`.github/workflows/fullstack.yml`提供手动与可复用的**完整发布门禁**：输入准确40位`forge_ref`，从`crane199709/saas-forge`检出同一源码，构建完整配套SDK/运行包到任务私有Maven目录，用`-nsu`补齐AI公开依赖后离线固定该分发，再串行运行all→platform→真实Shell→本地镜像构建，不push。此运行分发前提独立于常规“发布SDK消费”门禁；平台应用jar并非公开Maven SDK制品。镜像构建的BuildKit元数据（含manifest digest）保存到`target/images/*.json`，随验收产物上传；本地image ID与manifest digest分别记录。
+`.github/workflows/fullstack.yml`提供手动与可复用的**完整发布门禁**：输入准确40位`forge_ref`（必须包含本次AI模型控制台页面），从`crane199709/saas-forge`检出同一源码，构建完整配套SDK/运行包到任务私有Maven目录，用`-nsu`补齐AI公开依赖后离线固定该分发，再串行运行all→platform→真实Shell→本地镜像构建，不push。此运行分发前提独立于常规“发布SDK消费”门禁；平台应用jar并非公开Maven SDK制品。镜像构建的BuildKit元数据（含manifest digest）保存到`target/images/*.json`，随验收产物上传；本地image ID与manifest digest分别记录。
 
-本次本地平台基线`dc51a9a6998e241767df0c4bba68f8dc14009c70`尚未push，包含审查后的具体AI用量错误提示；私有运行分发由此确切提交干净重建；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。
+此前本地平台基线`dc51a9a6998e241767df0c4bba68f8dc14009c70`尚未push，包含审查后的具体AI用量错误提示；私有运行分发由此确切提交干净重建；运行包SHA保存在本地验收证据。该ref在远端可检出前不能运行完整CI，更不能把本地通过写成GitHub Actions通过。发布前必须推送经过审核的确切平台ref并执行完整门禁；不能用分支名漂移替代。
+
+当前联调的AI与前端源码HEAD由`source.json`记录，运行包分别以`target/platform-it/*.sha256`核对。源码记录与本地通过不能证明远端CI已运行。
 
 ## 镜像与部署检查
 

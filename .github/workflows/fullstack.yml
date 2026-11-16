@@ -16,6 +16,9 @@ permissions:
 jobs:
   fullstack:
     runs-on: ubuntu-latest
+    env:
+      # 固定的测试主密钥，不是真实模型凭据；生产 Secret 独立管理。
+      AI_MODEL_CREDENTIAL_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +94,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ai-fullstack/*.png
             ${{ runner.temp }}/ai-fullstack/*.json
+            !${{ runner.temp }}/ai-fullstack/browser-env.json
             ${{ runner.temp }}/ai-fullstack/*.log
             ${{ runner.temp }}/ai-fullstack/*.prom
             ${{ runner.temp }}/ai-fullstack/browser-results/

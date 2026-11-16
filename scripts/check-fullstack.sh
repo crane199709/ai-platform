@@ -2,8 +2,9 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 : "${AI_FORGE_RUNTIME_REPOSITORY:?指向包含三个真实Forge应用jar的Maven目录}"
-: "${AI_FORGE_SOURCE:?指向与运行包配套的SaaS Forge工作区，用于构建真实tenant-app}"
+: "${AI_FORGE_SOURCE:?指向与运行包配套的SaaS Forge工作区，用于构建真实tenant-app与platform-console}"
 [[ -f "$AI_FORGE_SOURCE/frontend/apps/tenant-app/package.json" ]] || { echo '缺少真实Tenant Shell源码' >&2; exit 1; }
+[[ -f "$AI_FORGE_SOURCE/frontend/apps/platform-console/package.json" ]] || { echo "Missing platform-console source" >&2; exit 1; }
 for module in forge-iam forge-platform forge-gateway; do
   [[ -f "$AI_FORGE_RUNTIME_REPOSITORY/io/saasforge/$module/0.2.0-SNAPSHOT/$module-0.2.0-SNAPSHOT.jar" ]] || { echo "缺少运行制品: $module" >&2; exit 1; }
 done
@@ -32,7 +33,7 @@ for attempt in {1..100}; do [[ -f "$AI_E2E_PROVIDER_READY" ]] && break; kill -0 
 [[ -f "$AI_E2E_PROVIDER_READY" ]] || { echo '本地HTTPS提供方未启动' >&2; exit 1; }
 pnpm --filter @ai-platform/runner build
 pnpm --filter @forge/ai-sub-app build
-(cd "$AI_FORGE_SOURCE/frontend" && pnpm --filter @crane199709/sdk --filter @crane199709/ui build && pnpm --filter @forge/tenant-app build)
+(cd "$AI_FORGE_SOURCE/frontend" && pnpm --filter @crane199709/sdk --filter @crane199709/ui build && pnpm --filter @forge/tenant-app build && pnpm --filter @forge/platform-console build)
 flags=(-U)
 [[ "${AI_MAVEN_OFFLINE:-false}" == true ]] && flags=(-o)
 [[ -n "${AI_MAVEN_REPOSITORY:-}" ]] && flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY")

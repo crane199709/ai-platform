@@ -57,6 +57,7 @@ class FullStackIT {
     static final PlatformEnvironment platform = new PlatformEnvironment();
     static final int runnerPort = freePort();
     static final int managementPort = freePort();
+    static final int consolePort = freePort();
     static final Path output = Path.of(System.getenv("AI_E2E_OUTPUT"));
     static final String provider = JsonMapper.builder()
             .build()
@@ -65,6 +66,7 @@ class FullStackIT {
             .asText();
     final List<Process> processes = new ArrayList<>();
     String operator;
+    JsonNode operatorSession;
 
     @LocalServerPort
     int port;
@@ -289,10 +291,26 @@ class FullStackIT {
                 "--port",
                 "5174",
                 "--strictPort");
+        start(
+                "console",
+                Path.of(System.getenv("AI_FORGE_SOURCE"), "frontend"),
+                Map.of("FORGE_DEV_GATEWAY", platform.gateway()),
+                "pnpm",
+                "--filter",
+                "@forge/platform-console",
+                "exec",
+                "vite",
+                "preview",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "" + consolePort,
+                "--strictPort");
         for (String url : List.of(
                 "http://127.0.0.1:" + runnerPort + "/ready",
                 "http://127.0.0.1:5180/remoteEntry.js",
-                "http://localhost:5174/")) {
+                "http://localhost:5174/",
+                "http://127.0.0.1:" + consolePort + "/")) {
             Awaitility.await()
                     .alias("HTTP readiness " + url)
                     .atMost(Duration.ofSeconds(45))
@@ -315,8 +333,14 @@ class FullStackIT {
                 output.resolve("browser-env.json"),
                 JsonMapper.builder()
                         .build()
-                        .writeValueAsString(
-                                Map.of("gateway", platform.gateway(), "runner", "http://127.0.0.1:" + runnerPort)));
+                        .writeValueAsString(Map.of(
+                                "gateway", platform.gateway(),
+                                "runner", "http://127.0.0.1:" + runnerPort,
+                                "platformConsole",
+                                        Map.of(
+                                                "url", "http://127.0.0.1:" + consolePort,
+                                                "session", operatorSession,
+                                                "modelBaseUrl", provider + "/v1"))));
     }
 
     @Test
@@ -679,15 +703,17 @@ class FullStackIT {
         if (membership != null) {
             body.put("membershipId", membership);
         }
-        return client.post()
+        JsonNode session = client.post()
                 .uri(prefix + "/auth/exchange")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()
                 .body(JsonNode.class)
-                .path("data")
-                .path("accessToken")
-                .asText();
+                .path("data");
+        if (operatorRealm) {
+            operatorSession = session;
+        }
+        return session.path("accessToken").asText();
     }
 
     static JsonNode call(String base, HttpMethod method, String path, String token, Object body, int expectedStatus) {

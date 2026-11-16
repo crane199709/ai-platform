@@ -2,8 +2,6 @@
 
 平台运营维护模型目录；租户管理员限制本租户可用的目录项。浏览器通过 Gateway，服务直连路径去掉 `/ai`；平台路径由 `/ai-platform` 重写为 `/platform`。响应统一为 Forge `ApiResponse` 信封。
 
-> `apiKey` 与 `credentialKind` 是本次变更的目标契约，实现见 [平台模型目录的凭据管理](../.scratch/platform-model-management/spec.md)；该实现合入前，代码仍只接受 `secretRef`。
-
 | Gateway HTTP | 授权 | 行为 |
 |---|---|---|
 | `GET /ai-platform/models` | Platform `platform:ops:manage` | 列出未删除的全部目录项，含禁用项 |

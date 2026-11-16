@@ -30,7 +30,7 @@ Runner进程不继承模型/MCP密钥、用户JWT或用户home。只读官方pro
 | `FORGE_OPS_TOKEN` | AI实例健康接入状态的独立运维凭证；Platform Ops映射同值 |
 | `FORGE_BUSINESS_ZONE` | 与平台一致的显式时区，决定月配额/日快照；不能依赖主机默认时区 |
 
-[Secret样例](../deploy/kubernetes/secrets.example.yaml) 不参与kustomization，不含真实凭据。用环境的Secret/Vault控制器创建 `ai-service-secrets` 与 `ai-runner-identity`；不要把全部AI Secret通过共同 `envFrom` 注入Runner。Runner只有单独的服务身份Secret。模型/MCPKey轮换先更新AI Secret，重建AI实例后做本地/预发布回合验证，再撤销旧Key；不能把密钥明文写进目录、前端、日志或镜像。`AI_MODEL_CREDENTIAL_KEY` 是加密主密钥，不做轮换：更换它会让所有直接密钥模型无法解密，只能重新录入。
+[Secret样例](../deploy/kubernetes/secrets.example.yaml) 不参与kustomization，不含真实凭据。用环境的Secret/Vault控制器创建 `ai-service-secrets` 与 `ai-runner-identity`；不要把全部AI Secret通过共同 `envFrom` 注入Runner。Runner只有单独的服务身份Secret。引用型模型与MCP Key轮换先更新AI Secret，重建AI实例后做本地/预发布回合验证，再撤销旧Key。直接密钥模型在控制台重新填写API Key完成替换，留空表示保留；AI服务加密后保存，更新后的供应商请求使用新Key。原始Key仅经控制台表单写入请求提交，不在HTTP响应、Runner上下文、审计、日志或镜像中返回或保存。本地 `.env.example`、CI和测试配置使用同一确定性测试主密钥，不得用于部署。部署可用 `openssl rand -base64 32` 生成独立值，保管在Secret/Vault中并与数据库备份分离。`AI_MODEL_CREDENTIAL_KEY` 是加密主密钥，不做轮换：更换它会让所有直接密钥模型无法解密，只能重新录入。
 
 ## 数据库与平台接入
 
@@ -100,6 +100,8 @@ DSH升级先更新固定版本与lockfile，在Runner HTTP契约中验证初始�
 `check-fullstack.sh`要求Docker、JDK17、Node24、pnpm、openssl/keytool、Playwright Chromium、配套平台源码与真实三个可执行jar。`AI_MAVEN_REPOSITORY`可指向隔离依赖库，`AI_MAVEN_OFFLINE=true`用于已缓存环境。缺少运行分发时直接失败，不跳过。
 
 脚本生成短期本地HTTPS证书，仅以测试JVM truststore信任该证书；生产HTTPS/密钥allowlist没有弱化。不读取生产Key、不调用计费端点。真实Tenant Shell经Module Federation加载AI远程模块，测试不拦截页面HTTP、不使用DevHost，也不替换AgentRuntime。真实IAM PKCE、PostgreSQL/Redis/MQ、Gateway、AI、Node DSH与MCP审批/用量贯通；模型和外部MCP仅在本地HTTPS边界确定性响应。
+
+真实平台控制台通过独立随机端口preview连接同一Gateway，使用IAM签发的Operator会话，覆盖API Key新增、列表脱敏、留空保留编辑与确认禁用；新增目录项最终禁用，不改变租户模型选择和供应商调用计数。浏览器临时会话仅写入本地`browser-env.json`，不作为CI产物上传。
 
 两宽1440/1024覆盖登录→建会话→分批输出→刷新恢复→敏感只读工具等待批准/结果→A/B切租户→删除→无权限不可见；并检查实际HTTP用量与Platform投影、受保护/内网指标。产物默认`ai-service/target/fullstack`，可用`AI_E2E_OUTPUT=/tmp/ai-e2e`放仓库外；含截图、浏览器报告、平台SHA与日志，TLS私钥不应上传报告。已有mock视觉回归另测布局，不能替代该真实链路。
 

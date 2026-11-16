@@ -928,8 +928,164 @@ class PlatformIntegrationIT {
     }
 
     static final Map<String, List<Integer>> providerScenarios = new ConcurrentHashMap<>();
+    static final Map<String, ProviderTransport> providerOverrides = new ConcurrentHashMap<>();
     static final List<String> providerPrompts = new CopyOnWriteArrayList<>();
     static final List<String> providerSecrets = new CopyOnWriteArrayList<>();
+
+    @Test
+    void modelRetryUsesTheUpdatedEndpointModelAndCredentialTogether() throws Exception {
+        String model = createConversationModel();
+        String base = "http://127.0.0.1:" + port;
+        var payload = new HashMap<String, Object>(Map.of(
+                "name",
+                "Retry configuration",
+                "provider",
+                "DEEPSEEK",
+                "modelId",
+                "conversation-old-provider",
+                "baseUrl",
+                "https://old-provider.example.test/v1",
+                "apiKey",
+                "test-old-provider-key",
+                "capabilities",
+                List.of("CHAT"),
+                "status",
+                "ENABLED",
+                "contextWindow",
+                65536));
+        call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200);
+        String conversation = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Retry configuration", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String marker = "retry-configuration-" + UUID.randomUUID();
+        var endpoints = new CopyOnWriteArrayList<String>();
+        var modelIds = new CopyOnWriteArrayList<String>();
+        var secrets = new CopyOnWriteArrayList<String>();
+        var statuses = new CopyOnWriteArrayList<Integer>();
+        providerOverrides.put(marker, (endpoint, secret, body) -> {
+            endpoints.add(endpoint.toString());
+            modelIds.add(
+                    JsonMapper.builder().build().readTree(body).path("model").asText());
+            secrets.add(secret);
+            if (endpoints.size() == 1) {
+                payload.put("baseUrl", "https://new-provider.example.test/v2");
+                payload.put("modelId", "conversation-new-provider");
+                payload.put("apiKey", "test-new-provider-key");
+                call(base, HttpMethod.PUT, "/platform/models/" + model, operator, payload, 200);
+                return new ProviderTransport.Response(503, "text/plain", new ByteArrayInputStream(new byte[0]));
+            }
+            return new ProviderTransport.Response(
+                    200,
+                    "text/event-stream",
+                    new ByteArrayInputStream("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8)));
+        });
+        runtime.toolProbes.put(
+                UUID.fromString(conversation),
+                run -> statuses.add(runtime.proxy(
+                        run,
+                        run.contextToken(),
+                        TENANT_A.toString(),
+                        Map.of(
+                                "model",
+                                model,
+                                "stream",
+                                true,
+                                "max_tokens",
+                                10,
+                                "messages",
+                                List.of(Map.of("role", "user", "content", marker))))));
+        try {
+            sendMessage(conversation, "retry configuration", UUID.randomUUID().toString(), tokenA);
+            assertThat(statuses).containsExactly(200);
+            assertThat(endpoints)
+                    .containsExactly(
+                            "https://old-provider.example.test/v1/chat/completions",
+                            "https://new-provider.example.test/v2/chat/completions");
+            assertThat(modelIds).containsExactly("conversation-old-provider", "conversation-new-provider");
+            assertThat(secrets).containsExactly("test-old-provider-key", "test-new-provider-key");
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(conversation));
+            providerOverrides.remove(marker);
+        }
+    }
+
+    @Test
+    void modelRetryRejectsTheRequestWhenTheUpdatedContextWindowIsTooSmall() throws Exception {
+        String model = createConversationModel();
+        String conversation = call(
+                        platform.gateway(),
+                        HttpMethod.POST,
+                        "/ai/conversations",
+                        tokenA,
+                        Map.of("title", "Smaller retry window", "modelId", model),
+                        201)
+                .path("data")
+                .path("id")
+                .asText();
+        String marker = "retry-smaller-window-" + UUID.randomUUID();
+        var attempts = new AtomicInteger();
+        var statuses = new CopyOnWriteArrayList<Integer>();
+        providerOverrides.put(marker, (endpoint, secret, body) -> {
+            if (attempts.incrementAndGet() == 1) {
+                call(
+                        "http://127.0.0.1:" + port,
+                        HttpMethod.PUT,
+                        "/platform/models/" + model,
+                        operator,
+                        Map.of(
+                                "name",
+                                "Smaller retry window",
+                                "provider",
+                                "DEEPSEEK",
+                                "modelId",
+                                "conversation-smaller-retry-window",
+                                "baseUrl",
+                                "https://models.example.test/v1",
+                                "capabilities",
+                                List.of("CHAT"),
+                                "status",
+                                "ENABLED",
+                                "contextWindow",
+                                128),
+                        200);
+                return new ProviderTransport.Response(503, "text/plain", new ByteArrayInputStream(new byte[0]));
+            }
+            return new ProviderTransport.Response(
+                    200,
+                    "text/event-stream",
+                    new ByteArrayInputStream("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8)));
+        });
+        runtime.toolProbes.put(
+                UUID.fromString(conversation),
+                run -> statuses.add(runtime.proxy(
+                        run,
+                        run.contextToken(),
+                        TENANT_A.toString(),
+                        Map.of(
+                                "model",
+                                model,
+                                "stream",
+                                true,
+                                "max_tokens",
+                                100,
+                                "messages",
+                                List.of(Map.of("role", "user", "content", marker))))));
+        try {
+            sendMessage(conversation, "retry smaller window", UUID.randomUUID().toString(), tokenA);
+            assertThat(statuses).containsExactly(400);
+            assertThat(attempts.get()).isEqualTo(1);
+        } finally {
+            runtime.toolProbes.remove(UUID.fromString(conversation));
+            providerOverrides.remove(marker);
+        }
+    }
 
     @Test
     void transientModelHttpStatusesRetryButAuthenticationDoesNotAndUnknownCostSurvivesSuccess() throws Exception {
@@ -4330,6 +4486,17 @@ class PlatformIntegrationIT {
         @Primary
         ProviderTransport fakeProviderTransport() {
             return (endpoint, secret, body) -> {
+                String marker = JsonMapper.builder()
+                        .build()
+                        .readTree(body)
+                        .path("messages")
+                        .get(0)
+                        .path("content")
+                        .asText();
+                var override = providerOverrides.get(marker);
+                if (override != null) {
+                    return override.open(endpoint, secret, body);
+                }
                 assertThat(endpoint.toString()).isEqualTo("https://models.example.test/v1/chat/completions");
                 assertThat(secret).isEqualTo(MODEL_SECRET.get());
                 assertThat(JsonMapper.builder()
@@ -4338,13 +4505,6 @@ class PlatformIntegrationIT {
                                 .path("model")
                                 .asText())
                         .startsWith("conversation-");
-                String marker = JsonMapper.builder()
-                        .build()
-                        .readTree(body)
-                        .path("messages")
-                        .get(0)
-                        .path("content")
-                        .asText();
                 providerPrompts.add(marker);
                 providerSecrets.add(secret);
                 var scenario = providerScenarios.get(marker);

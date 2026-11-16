@@ -9,6 +9,7 @@ import io.saasforge.ai.model.model.*;
 import io.saasforge.ai.model.service.ModelCredentialCipher;
 import io.saasforge.ai.model.service.ModelRuntimeConfiguration;
 import java.net.URI;
+import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -48,10 +49,10 @@ class ModelCredentialCipherTest {
         var cipher = new ModelCredentialCipher(new ModelCredentialProperties(TEST_KEY));
         var id = UUID.randomUUID();
         var encrypted = cipher.encrypt("test-provider-secret", id);
-        var bytes = java.util.Base64.getDecoder().decode(encrypted.substring(3));
+        var bytes = Base64.getDecoder().decode(encrypted.substring(3));
         bytes[12] ^= 1;
-        var tampered = "v1:" + java.util.Base64.getEncoder().encodeToString(bytes);
-        for (String value : java.util.List.of("v2:secret", "v1:not-base64", "v1:AAAA", tampered)) {
+        var tampered = "v1:" + Base64.getEncoder().encodeToString(bytes);
+        for (String value : List.of("v2:secret", "v1:not-base64", "v1:AAAA", tampered)) {
             assertThatThrownBy(() -> cipher.decrypt(value, id))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Model credential unavailable");

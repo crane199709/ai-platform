@@ -46,3 +46,14 @@ AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository \
 ### 限制
 
 未访问真实供应商或计费 API，模型转发使用本地 ProviderTransport 桩；没有修改生产、现有运行数据库或原始后端工作树。本工单未运行 FullStackIT 的浏览器链路，仅完成其必配属性适配；真实控制台联调与部署入口验收仍由工单 02 完成。主密钥保管和遗失后重录约束沿用 ADR-0005，v1 不提供轮换或恢复功能。
+
+### 最终 review 修复（2026-11-16）
+
+代码提交 `752c26a42294dcf4d2e83c28c8ac7387186cb47e` 修复重试期间目录配置混用：每次尝试在权限、启用状态复验后，以同次解析的完整配置检查上下文窗口、构造供应商 endpoint 和 model，并取得凭据。瞬时 HTTP 状态、三次尝试上限与已打开响应流不重放的行为保持原契约。`ModelCredentialCipherTest` 的 Base64/List 改为显式 import 与简单类名。
+
+两条新增回归从真实平台与 Runner HTTP 接口触发，供应商使用外部 `ProviderTransport` 适配器桩，没有替换模型选择或加密服务。首个 503 响应返回前，经真实平台 PUT 同步更换地址、模型 ID 和直接 Key；断言旧地址只收到旧 Key，第二次调用同时使用新地址、新模型和新 Key。另一条把目录窗口缩为 128，在输出 100 加输入消息超出新窗口时返回 400，供应商只收到一次请求。
+
+- 配置切换 Red：1/1 失败，第二次仍请求旧地址；随后 Green：1/1 通过。
+- 窗口缩小 Red：1/1 失败，预期 400、实际 200；最终两个重试回归 Green：2/2 通过。
+- 完整 `PlatformIntegrationIT`：56/56，0 失败、0 跳过；`AI_MAVEN_OFFLINE=true bash scripts/check.sh service`：verify 19/19，架构、迁移注释、Spotless 与权限目录门禁均通过。
+- 完整 FullStackIT 与三项浏览器回归通过，证据与命令见工单 02 的最终 review 验收。仓库外证据目录为 `/Users/liuhuan/.codex/visualizations/2026/11/16/01a1e2fa-176d-7701-bd1c-a1f527c05fd5/model-management/review-fixes`，包含两轮 Red/Green 日志、完整平台集成报告与服务 verify 日志。

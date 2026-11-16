@@ -48,3 +48,29 @@ AI_FORGE_SOURCE=/Users/liuhuan/workspace/coding/saas-forge \
 - 证据原始目录：`ai-service/target/fullstack`；完整 Maven 输出：`ai-service/target/ai-model02-fullstack.log`。仓库外交付目录：`/Users/liuhuan/.codex/visualizations/2026/11/16/01a1e2fa-176d-7701-bd1c-a1f527c05fd5/model-management/backend02`，含截图、浏览器/HTTP 证据、用量、指标、运行包 SHA、测试报告与 `SHA256SUMS`。未复制临时 Operator 会话、TLS 私钥或 truststore。
 
 此次为本地真实平台链路验收，外部模型/MCP 在本地 HTTPS 边界确定性响应；没有调用真实供应商、推送、触发远端 CI 或部署生产。
+
+### 最终 review 验收（2026-11-16）
+
+重试配置快照与类型引用的修复位于受管工作树 `/Users/liuhuan/.codex/worktrees/ai-model-review-fixes/ai-platform`、分支 `codex/model-management-review-fixes`，基线 `7626bc60f3ea4b3d3dc2973bfd7d915630a04d01`。交付前合入最新 `codex/platform-model-management`，tip 仍为基线，返回 Already up to date。
+
+```bash
+cd ai-service
+AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository \
+  ./mvnw -o -s .mvn/settings.xml test '-Dtest=PlatformIntegrationIT#modelRetry*'
+AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository \
+  ./mvnw -o -s .mvn/settings.xml test -Dtest=PlatformIntegrationIT
+cd ..
+AI_MAVEN_OFFLINE=true bash scripts/check.sh service
+AI_MAVEN_OFFLINE=true \
+AI_FORGE_RUNTIME_REPOSITORY=/Users/liuhuan/.m2/repository \
+AI_FORGE_SOURCE=/Users/liuhuan/workspace/coding/saas-forge \
+AI_E2E_OUTPUT=/private/tmp/ai-model-review-fixes-752c26a \
+  bash scripts/check-fullstack.sh
+```
+
+- 完整平台集成 56/56、服务 verify 19/19 与权限目录门禁通过。`source.json`：AI `752c26a42294dcf4d2e83c28c8ac7387186cb47e`，SaaS Forge `4831e933221a57eccd470adb7995ac60701eebf0`，Node `v24.14.1`、DSH `0.2.2-rc.1`；本次后续验收记录提交只改文档。
+- FullStackIT：2/2，0 失败、0 跳过；Playwright：3/3，31.5 秒。真实 IAM/Gateway、DSH、HTTPS 模型/MCP、控制台 API Key 新增/保留编辑/禁用及 Tenant Shell 1440/1024 回归均通过。Browser 插件未提供，沿用已有 Playwright 流程；已查看新增、禁用确认、禁用后与笔记本对话截图，三个浏览器证据的 `consoleErrors=[]`。
+- 控制台 HTTP 状态仍为新增 201、编辑 200、禁用 200；响应继续脱敏、编辑与禁用不传凭据。供应商最终计数仍为模型 10、MCP 3、流片段 14，授权有效；第一阶段用量 54 token/2 工具调用及后续零用量、缺失/混合用量断言全部保持通过。
+- 初次启动在测试前被 pnpm 12 的任务状态目录校验拒绝，因为 node_modules 根目录是缓存符号链接。仅在修复树移除三个链接并运行 `pnpm install --offline --frozen-lockfile`，复用 816 包、下载 0、锁文件不变，随后原脚本完整通过。首启动日志与依赖处理日志单独保留。
+- 临时输出在 `/private/tmp/ai-model-review-fixes-752c26a`；仓库外交付证据目录为 `/Users/liuhuan/.codex/visualizations/2026/11/16/01a1e2fa-176d-7701-bd1c-a1f527c05fd5/model-management/review-fixes`，含截图、公开 HTTP/浏览器证据、Red/Green、测试报告、用量、指标、源码/运行包标识、`acceptance.json` 与 `SHA256SUMS`。18 份日志的 11 类确定性凭据标记命中 0；未复制 TLS 材料、浏览器会话或 Runner 主目录。
+- 用户已有的 IPv6 5173/5174 开发服务仍在监听；仅启动和清理本次测试进程。没有访问生产、现有运行数据库、真实供应商计费 API、远端 CI，也没有 push。

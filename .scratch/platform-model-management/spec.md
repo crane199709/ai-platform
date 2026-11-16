@@ -111,6 +111,7 @@ ALTER TABLE ai_model_catalog ADD CONSTRAINT ai_model_catalog_credential_check CH
 - 带 `apiKey` 创建返回 201，响应与列表不含密钥、密文与 `secretRef`，`credentialKind=API_KEY`；库中该列不是明文。
 - 编辑不传凭据：原 Key 保留（轮换验证：改一个模型的 Key 后下一回合用新值），元数据更新生效。
 - 编辑传 `apiKey` 替换：旧 Key 失效、新 Key 生效；引用型改成直接密钥后 `credential_kind` 变化。
+- 瞬时 HTTP 失败重试期间更新目录项：下一次尝试的供应商地址、模型 ID、凭据与上下文窗口来自同次解析；旧地址不能收到新 Key，窗口缩小后超预算请求在再次调用供应商前拒绝。
 - `apiKey` 与 `secretRef` 同传、或 `POST` 都不传：400 `request.invalid`。
 - 存量 `REFERENCE` 模型在迁移后仍能完成回合；允许列表外引用仍返回 503。
 - 主密钥错误/缺失导致解密失败时返回 503，不泄露原因。
@@ -135,3 +136,9 @@ ALTER TABLE ai_model_catalog ADD CONSTRAINT ai_model_catalog_credential_check CH
 后端实际迁移为 `V12__model_credentials.sql`。从 `ai-service` 执行 Maven wrapper（根目录没有 wrapper）：服务安装与格式检查通过，`PlatformIntegrationIT` 54/54；完整 `scripts/check-fullstack.sh` 通过 `FullStackIT` 2/2 与浏览器 3/3。控制台真实 API Key 新增、留空保留编辑、确认禁用及响应脱敏通过；原引用型模型的真实 Tenant Shell → Runner → HTTPS 模型/MCP 回归、权限隔离与用量计数保持通过。
 
 被测后端提交 `56f5bf9e48c7cd71c97efa1bed49c6c0092d1bee`，SaaS Forge 前端提交 `4831e933221a57eccd470adb7995ac60701eebf0`；运行时 `source.json` 与三份平台运行包 SHA 分别记录源码与制品。命令、环境问题修正、截图和证据见 [工单 02 的 Answer](issues/02-deployment-and-contract-docs.md)。仅完成本地验收，未声明远端 CI 或真实供应商验证。
+
+## 最终 review 修复验收（2026-11-16）
+
+后端代码提交 `752c26a42294dcf4d2e83c28c8ac7387186cb47e` 修复重试时旧地址/模型与新凭据混用，并按每次尝试的当前窗口复验预算。两条公开 HTTP 回归分别先观察到旧地址被再次请求、窗口缩小后仍返回 200，再通过最小修复转绿；完整 `PlatformIntegrationIT` 现为 56/56，服务 verify 19/19 与权限目录门禁通过。
+
+在该代码提交上重新执行完整 FullStackIT 2/2 与 Playwright 3/3（31.5 秒），真实 HTTPS 供应商桩、DSH、控制台与 Tenant Shell 回归通过。`source.json` 的后端为上述提交，前端仍为 `4831e933221a57eccd470adb7995ac60701eebf0`。本次仓库外证据目录为 `/Users/liuhuan/.codex/visualizations/2026/11/16/01a1e2fa-176d-7701-bd1c-a1f527c05fd5/model-management/review-fixes`；修复、Red/Green、完整命令与环境处理见工单 01/02 的最终 review 记录。原有验收证据继续保留，未访问生产或现有数据库，未执行远端 CI/push。

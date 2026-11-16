@@ -1,0 +1,84 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AI Service (local)",
+      "type": "java",
+      "request": "launch",
+      "mainClass": "io.saasforge.ai.AiApplication",
+      "projectName": "ai-service",
+      "cwd": "${workspaceFolder}/ai-service",
+      // 与 IDEA 的本地启动配置共用环境文件；凭证不写入工作区配置。
+      "envFile": "${workspaceFolder}/ai-service/.env.local",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Runner (local)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/runner",
+      "program": "${workspaceFolder}/runner/dist/main.js",
+      "envFile": "${workspaceFolder}/runner/.env.local",
+      "preLaunchTask": "runner: build (debug)",
+      "outFiles": ["${workspaceFolder}/runner/dist/**/*.js"],
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "AI Sub-App (dev)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/ai-sub-app",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--host", "127.0.0.1"],
+      "env": {
+        "NO_COLOR": "1"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "serverReadyAction": {
+        "pattern": "Local:\\s+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}/ai-sub-app",
+        "killOnServerStop": true
+      }
+    },
+    {
+      "name": "AI Sub-App (Shell)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/ai-sub-app",
+      "runtimeExecutable": "pnpm",
+      // 等价于 start:ai 的构建后预览流程，调试构建额外生成源码映射。
+      "runtimeArgs": ["exec", "vite", "preview", "--host", "127.0.0.1", "--port", "5180"],
+      "preLaunchTask": "ai-sub-app: build (debug)",
+      "env": {
+        "NO_COLOR": "1"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "serverReadyAction": {
+        "pattern": "Local:\\s+(https?://\\S+)",
+        // 需要另行启动 Forge Shell、Gateway 和平台依赖。
+        "uriFormat": "http://localhost:5174/apps/ai/home",
+        "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}/ai-sub-app",
+        "killOnServerStop": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "AI Platform (Service + Runner)",
+      "configurations": ["AI Service (local)", "Runner (local)"],
+      "stopAll": true
+    },
+    {
+      "name": "AI Platform (Shell)",
+      "configurations": ["AI Service (local)", "Runner (local)", "AI Sub-App (Shell)"],
+      "stopAll": true
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "runner: build (debug)",
+      "type": "process",
+      "command": "pnpm",
+      "args": ["--filter", "@ai-platform/runner", "exec", "tsc", "--sourceMap", "--inlineSources"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": "$tsc",
+      "group": "build"
+    },
+    {
+      "label": "ai-sub-app: build (debug)",
+      "type": "process",
+      "command": "pnpm",
+      "args": ["--filter", "@forge/ai-sub-app", "run", "build", "--sourcemap"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

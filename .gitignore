@@ -13,6 +13,10 @@ playwright-report/
 .flattened-pom.xml
 
 # 本地编辑器配置
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
 
 .runtime-source/

@@ -1,0 +1,47 @@
+{
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false
+  },
+  // Java 和 XML 的格式由 Maven Spotless 统一管理。
+  "[java]": {
+    "editor.tabSize": 4,
+    "editor.defaultFormatter": "redhat.java",
+    "editor.formatOnSave": false
+  },
+  "[xml]": {
+    "editor.tabSize": 4,
+    "editor.formatOnSave": false
+  },
+  "prettier.requireConfig": true,
+  "prettier.prettierPath": "./ai-sub-app/node_modules/prettier",
+  "typescript.tsdk": "runner/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "npm.packageManager": "pnpm",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.configuration.maven.userSettings": "${workspaceFolder}/ai-service/.mvn/settings.xml",
+  "maven.executable.preferMavenWrapper": true,
+  "maven.executable.options": "--settings \"${workspaceFolder}/ai-service/.mvn/settings.xml\"",
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/dist": true,
+    "**/playwright-report": true,
+    "**/test-results": true,
+    "**/.runtime-source": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/target/**": true,
+    "**/dist/**": true,
+    "**/playwright-report/**": true,
+    "**/test-results/**": true,
+    "**/.runtime-source/**": true
+  }
+}

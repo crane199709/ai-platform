@@ -12,4 +12,7 @@ playwright-report/
 .DS_Store
 .flattened-pom.xml
 
+# 本地编辑器配置
+.vscode/
+
 .runtime-source/

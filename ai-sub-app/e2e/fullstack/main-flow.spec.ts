@@ -52,6 +52,14 @@ for (const [label, width] of [
     await expect(page.getByRole('heading', { name: 'AI 工作台', exact: true })).toBeVisible()
     await expect(page).toHaveTitle('SaaS Forge 租户端')
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
+    expect(
+      await page.evaluate(() =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--el-color-primary')
+          .trim()
+          .toLowerCase(),
+      ),
+    ).toBe('#4f46e5')
     expect(remoteResponses.length).toBeGreaterThan(0)
     await page.getByRole('button', { name: '新建会话', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '新建会话' })

@@ -10,6 +10,19 @@
 
 `bash scripts/check.sh all`统一调用三套门禁；也可指定`service|runner|sub-app`。`AI_MAVEN_OFFLINE=true`使用已有依赖，`AI_MAVEN_REPOSITORY=/path/to/m2`指定隔离库。新增依赖需先在可联网环境补齐；不要改共享Maven里的Forge制品。
 
+## 固定未发布候选验收
+
+本次升级基线已使用 `0.2.0-SNAPSHOT`，前端通过仓库内 tarball 固定到平台候选 `54115992`，不是从已发布 `0.1.0` 升级。精确输入见 [.forge-packages/candidate.json](../.forge-packages/candidate.json)。
+
+```bash
+JAVA_HOME=/path/to/jdk17 bash scripts/verify-candidate-sdk.sh /path/to/candidate /tmp/new-ai-candidate-evidence
+pnpm install --frozen-lockfile
+```
+
+该入口校验候选清单及其全部制品、工程本地 tarball，创建不含本机 Forge 的 Maven 缓存，从候选 file 仓库消费后执行完整 verify 与权限目录检查，最后输出实际解析的 JAR/POM 摘要。后续平台/完整 Shell 验收设置 `AI_MAVEN_REPOSITORY=/tmp/new-ai-candidate-evidence/m2`、`AI_MAVEN_OFFLINE=true`，配套平台运行包另放 `AI_FORGE_RUNTIME_REPOSITORY`，避免源码 install 覆盖 SDK。配套 Shell 源码和运行包须记录提交与摘要。
+
+当前 `ci.yml` 仍从目标 Maven 下载同坐标快照，`fullstack.yml` 则由输入的固定平台源码构建私有运行分发；两者均不能冒充本次未发布候选验收，也不表示远端已经通过。固定候选验收证据见 [本次升级记录](upgrade-v020.md)。
+
 ## 真实平台与完整Shell门禁
 
 `bash scripts/check.sh platform`需要Docker和`AI_FORGE_RUNTIME_REPOSITORY`中的真实IAM/Platform/Gateway `0.2.0-SNAPSHOT`可执行jar。它通过随机端口和临时PostgreSQL/Redis/RocketMQ运行HTTP/MQ验收，无平台实现类依赖、不跳过缺失制品。测试产物SHA与日志在`ai-service/target/platform-it`。

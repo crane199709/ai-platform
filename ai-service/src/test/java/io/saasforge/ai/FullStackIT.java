@@ -67,6 +67,7 @@ class FullStackIT {
     final List<Process> processes = new ArrayList<>();
     String operator;
     JsonNode operatorSession;
+    Process shellProcess;
 
     @LocalServerPort
     int port;
@@ -276,7 +277,7 @@ class FullStackIT {
                 "--port",
                 "5180",
                 "--strictPort");
-        start(
+        shellProcess = start(
                 "shell",
                 Path.of(System.getenv("AI_FORGE_SOURCE"), "frontend"),
                 Map.of("FORGE_DEV_GATEWAY", platform.gateway()),
@@ -582,7 +583,52 @@ class FullStackIT {
         assertThat(modelCalls).containsExactly("USAGE_ZERO", "USAGE_MISSING", "USAGE_MIXED", "USAGE_MIXED");
     }
 
-    void start(String name, Path directory, Map<String, String> environment, String... command) throws Exception {
+    @Test
+    @Order(3)
+    void independentDevHostReadsRealBackendAndCandidateTheme() throws Exception {
+        // IAM 的租户回调固定为同一源；Shell 验收结束后把此源交给独立开发宿主。
+        shellProcess.descendants().forEach(ProcessHandle::destroy);
+        shellProcess.destroy();
+        assertThat(shellProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS))
+                .isTrue();
+        start(
+                "independent-host",
+                Path.of("../ai-sub-app"),
+                Map.of("FORGE_DEV_GATEWAY", platform.gateway()),
+                "pnpm",
+                "dev",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "5174",
+                "--strictPort");
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(45))
+                .ignoreExceptions()
+                .until(() -> PlatformEnvironment.client("http://127.0.0.1:5174")
+                        .get()
+                        .uri("/")
+                        .exchange(
+                                (request, response) -> response.getStatusCode().value() == 200));
+        var command = new ProcessBuilder("pnpm", "exec", "playwright", "test", "-c", "playwright.dev-host.config.ts")
+                .directory(Path.of("../ai-sub-app").toFile())
+                .redirectErrorStream(true)
+                .redirectOutput(output.resolve("dev-host-playwright.log").toFile());
+        command.environment().put("AI_E2E_OUTPUT", output.toString());
+        Process browser = command.start();
+        try {
+            assertThat(browser.waitFor(3, java.util.concurrent.TimeUnit.MINUTES))
+                    .isTrue();
+            assertThat(browser.exitValue())
+                    .as("Independent host: %s", read(output.resolve("dev-host-playwright.log")))
+                    .isZero();
+        } finally {
+            browser.descendants().forEach(ProcessHandle::destroy);
+            browser.destroyForcibly();
+        }
+    }
+
+    Process start(String name, Path directory, Map<String, String> environment, String... command) throws Exception {
         var builder = new ProcessBuilder(command)
                 .directory(directory.toFile())
                 .redirectErrorStream(true)
@@ -594,7 +640,9 @@ class FullStackIT {
                             key -> !List.of("PATH", "TMPDIR", "LANG", "LC_ALL").contains(key));
         }
         builder.environment().putAll(environment);
-        processes.add(builder.start());
+        Process process = builder.start();
+        processes.add(process);
+        return process;
     }
 
     @AfterAll

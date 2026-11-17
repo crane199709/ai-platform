@@ -405,7 +405,7 @@ packages:
       vue: ^3.5.44
 
   '@crane199709/sub-app-kit@file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz':
-    resolution: {integrity: sha512-z40js3wa3vOah1MNh21GM9ASJTpQ67nexW+7OLNot7G2cqEVrddiu3CYpPX3EdOC5GWiD0KIEe94lUxb6NuISQ==, tarball: file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz}
+    resolution: {integrity: sha512-ltYVe2oefJFQJuheUtiYHTrD2knG1vaj8+aXmpZ21XYeycPY9EeMqLPT3jppMgF8Ly2LsOxalONlj+MQxAVUZw==, tarball: file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz}
     version: 0.2.0-SNAPSHOT
     hasBin: true
     peerDependencies:
@@ -423,7 +423,7 @@ packages:
       vue-router: 5.4.0
 
   '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz':
-    resolution: {integrity: sha512-yWlUJmmOx2hkpFSBWnBtST3RcZ/rBZHD6ZIz7qjZKKE6W5R1j8CFc1Ig7dHkNTF9CfZth3je4FZk559EI7brEw==, tarball: file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz}
+    resolution: {integrity: sha512-vlMH7MKgaQDXQwAaPJiWozniU+WY/FyDsWhcY81XxV7CCDi5aKiGb8XOnnTszEpUf9jBht1OZmqTDa//rc5XeQ==, tarball: file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz}
     version: 0.2.0-SNAPSHOT
     peerDependencies:
       '@crane199709/sdk': 0.2.0-SNAPSHOT
@@ -5811,6 +5811,7 @@ snapshots:
   '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3))
+      '@element-plus/icons-vue': 2.3.2(vue@3.5.44(typescript@5.9.3))
       element-plus: 2.14.7(vue@3.5.44(typescript@5.9.3))
       vue: 3.5.44(typescript@5.9.3)
       vue-i18n: 11.4.16(vue@3.5.44(typescript@5.9.3))

@@ -1,0 +1,10 @@
+{
+  "sourceCommit": "54115992e00691be57b912e46593709c77c344a1",
+  "sourceVersion": "0.2.0-SNAPSHOT",
+  "manifestSha256": "999ef03043e0926e1c5d894f975e6c3a979b2e4bf22d68d90c4301cbc709f79b",
+  "tarballs": {
+    "crane199709-sdk-0.2.0-SNAPSHOT.tgz": "db3b4496a9691ca718b19e7dc95a9055ff242b63b6622c35a52a2cf024cee890",
+    "crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz": "a9c964e4aad3e18fb288051e823f7715ef894f51f5e1f4ed882a39a45863cc3d",
+    "crane199709-ui-0.2.0-SNAPSHOT.tgz": "bf5f7c012df8e86e1528b2b0435f9a8a4ad933bea9c13f280d8fdbba58bc653c"
+  }
+}

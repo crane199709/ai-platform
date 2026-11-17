@@ -35,10 +35,11 @@ for (const width of [1440, 1024]) {
     await page.goto('/apps/ai/home')
     await expect(page.getByText('Sub-App 开发宿主 · ai', { exact: true })).toBeVisible()
     await expect(page).toHaveTitle('ai Sub-App 开发宿主')
-    await page.getByRole('textbox', { name: '账号', exact: true }).fill('ai-member')
+    await page.getByRole('textbox', { name: '账号', exact: true }).fill('ai-reader')
     await page.getByLabel('密码', { exact: true }).fill('Demo-password-123!')
     await page.getByRole('button', { name: '登录', exact: true }).click()
     await expect(page.getByRole('button', { name: '退出', exact: true })).toBeVisible()
+    await expect(page.getByText('AI 只读成员 @ AI 验收租户 A', { exact: true })).toBeVisible()
     authenticated = true
     const models = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/ai/models',

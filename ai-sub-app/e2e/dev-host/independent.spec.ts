@@ -62,6 +62,7 @@ for (const width of [1440, 1024]) {
     expect(response.status()).toBe(201)
     const id = (await response.json()).data.id
     await expect(page.getByTestId(`conversation-${id}`)).toContainText(title)
+    await expect(page.locator('.el-overlay:visible')).toHaveCount(0)
     await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
     const primary = await page.evaluate(() =>
       getComputedStyle(document.documentElement)

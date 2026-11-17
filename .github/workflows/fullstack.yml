@@ -16,9 +16,6 @@ permissions:
 jobs:
   fullstack:
     runs-on: ubuntu-latest
-    env:
-      # 固定的测试主密钥，不是真实模型凭据；生产 Secret 独立管理。
-      AI_MODEL_CREDENTIAL_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +50,7 @@ jobs:
           ./mvnw --batch-mode "-Dmaven.repo.local=$AI_MAVEN_REPOSITORY" -DskipTests install
           cd ../frontend
           pnpm install --frozen-lockfile
-      - name: Resolve public AI dependencies without updating the pinned Forge snapshots
+      - name: Resolve public AI dependencies without updating the pinned Forge dependencies
         run: |
           cd ai-service
           ./mvnw --batch-mode -s .mvn/settings.xml -nsu "-Dmaven.repo.local=$RUNNER_TEMP/ai-runtime-m2" -DskipTests test-compile

@@ -14,9 +14,6 @@ concurrency:
 jobs:
   service:
     runs-on: ubuntu-latest
-    env:
-      # 固定的测试主密钥，不是真实模型凭据；生产 Secret 独立管理。
-      AI_MODEL_CREDENTIAL_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     timeout-minutes: 20
     permissions:
       contents: read
@@ -31,7 +28,7 @@ jobs:
           java-version: '17'
           cache: maven
           cache-dependency-path: ai-service/pom.xml
-      - name: Verify against published Forge snapshot
+      - name: Verify against published Forge SDK
         env:
           FORGE_MAVEN_USERNAME: ${{ github.actor }}
           FORGE_MAVEN_TOKEN: ${{ secrets.GITHUB_TOKEN }}

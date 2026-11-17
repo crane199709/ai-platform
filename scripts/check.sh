@@ -17,7 +17,7 @@ case "$component" in
     pnpm --filter @ai-platform/runner test
     ;;
   platform)
-    : "${AI_FORGE_RUNTIME_REPOSITORY:?设置为含 Forge IAM、Platform、Gateway 0.2.0-SNAPSHOT 运行 jar 的 Maven 仓库}"
+    : "${AI_FORGE_RUNTIME_REPOSITORY:?设置为含 Forge IAM、Platform、Gateway 0.2.0 运行 jar 的 Maven 仓库}"
     flags=(-U)
     if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
     if [[ -n "${AI_MAVEN_REPOSITORY:-}" ]]; then flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY"); fi

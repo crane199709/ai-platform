@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本工程是 SaaS Forge 平台的 Sub-App `ai`（平台版本 0.2.0-SNAPSHOT）：构建产物 `dist/remoteEntry.js` 由租户 Shell 经 Module Federation 加载，路由挂在 `/apps/ai` 下。
+本工程是 SaaS Forge 平台的 Sub-App `ai`（平台版本 0.2.0）：构建产物 `dist/remoteEntry.js` 由租户 Shell 经 Module Federation 加载，路由挂在 `/apps/ai` 下。
 
 ## 规则摘要
 
@@ -13,6 +13,10 @@
 - 配套后端按需使用 storage 时，StoragePurpose 保留期由服务声明；删除先失效并保留七天，期间仍占容量，前端按服务端结果展示。默认模板不启用 storage，后端已有表升级须新增迁移复制 upgrade-retention.sql。引用检查器须显式声明覆盖用途、包含逻辑删除的业务行并保留租户隔离；未覆盖或检查失败时跳过治理；后端绑定须在同一可写事务内先 get(purpose, id) 再写引用，引用查询设置数据库超时；storage 的 audit/scheduling 依赖、MQ/Redis 与 IAM 必配项按配套后端业务规范接入。
 - 敏感字段展示按 [规范「敏感字段展示」](docs/standards/sub-app.md#敏感字段展示) 消费服务端结果，页面不重算掩码；原文查看使用专用授权操作；预览失败不回显原样例，字段脱敏失败的导出任务没有结果文件；后端脱敏运行时的 IAM 地址和 Service Credential 不注入前端。
 - 视觉用例放 `e2e/visual/`：在 `localStorage` 预置假会话，用 `page.route` mock 接口，覆盖接近真实长度的数据、空值与空列表。
+
+## 平台版本升级
+
+升级至 0.2.0 时先读[集中升级清单](https://github.com/crane199709/saas-forge/blob/main/docs/upgrading-v020.md)，按同版本参考工程合并三包、配置和规范差异，保留业务源码、路由与自定义项；业务版本和 Resource Manifest 版本分别维护。
 
 ## 命令
 

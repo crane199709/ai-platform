@@ -163,9 +163,9 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz
-  '@crane199709/ui': file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz
-  '@crane199709/sub-app-kit': file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz
+  '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0.tgz
+  '@crane199709/ui': file:.forge-packages/crane199709-ui-0.2.0.tgz
+  '@crane199709/sub-app-kit': file:.forge-packages/crane199709-sub-app-kit-0.2.0.tgz
 
 importers:
 
@@ -174,11 +174,11 @@ importers:
   ai-sub-app:
     dependencies:
       '@crane199709/sdk':
-        specifier: file:../.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz
-        version: file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3))
+        specifier: file:../.forge-packages/crane199709-sdk-0.2.0.tgz
+        version: file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3))
       '@crane199709/ui':
-        specifier: file:../.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz
-        version: file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))
+        specifier: file:../.forge-packages/crane199709-ui-0.2.0.tgz
+        version: file:.forge-packages/crane199709-ui-0.2.0.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))
       element-plus:
         specifier: 2.14.7
         version: 2.14.7(vue@3.5.44(typescript@5.9.3))
@@ -196,8 +196,8 @@ importers:
         version: 5.4.0(@vue/compiler-sfc@3.5.45)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@5.9.3)(vue@3.5.44(typescript@5.9.3)))(rolldown@1.2.19)(vite@8.3.5(@types/node@24.19.2)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
     devDependencies:
       '@crane199709/sub-app-kit':
-        specifier: file:../.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz
-        version: file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz(3227cf184942771a654f862c448035ff)
+        specifier: file:../.forge-packages/crane199709-sub-app-kit-0.2.0.tgz
+        version: file:.forge-packages/crane199709-sub-app-kit-0.2.0.tgz(3b415f832b07e593b036eb4ec06abed3)
       '@module-federation/vite':
         specifier: 1.23.5
         version: 1.23.5(typescript@5.9.3)(vite@8.3.5(@types/node@24.19.2)(yaml@2.9.1))(vue-tsc@3.3.13(typescript@5.9.3))
@@ -239,7 +239,7 @@ importers:
     dependencies:
       '@deepseek-ai/dsh':
         specifier: 0.2.2-rc.1
-        version: 0.2.2-rc.1(137c6081b218522cdb79f2c4a7e95986)
+        version: 0.2.2-rc.1(dd03558dcc242de7db93860409dc7869)
     devDependencies:
       '@types/node':
         specifier: ^24.19.2
@@ -398,19 +398,19 @@ packages:
     resolution: {integrity: sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw==}
     hasBin: true
 
-  '@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz':
-    resolution: {integrity: sha512-oerudkAs0r816uWPWG8qR4miOKLqwkqVybbLE4d45AikCPPwUETk+qvS1VMihGpYqQR8sL1+J0GtFkZUk6/Q0w==, tarball: file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz}
-    version: 0.2.0-SNAPSHOT
+  '@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0.tgz':
+    resolution: {integrity: sha512-sYb5Wpo+kiOKMazZZerGD6PVeySiF917jFPddA8MxAUyaZmKEOuUaefg5wkQDWXezRP+3pft3jazWxlsmS4PIQ==, tarball: file:.forge-packages/crane199709-sdk-0.2.0.tgz}
+    version: 0.2.0
     peerDependencies:
       vue: ^3.5.44
 
-  '@crane199709/sub-app-kit@file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz':
-    resolution: {integrity: sha512-ltYVe2oefJFQJuheUtiYHTrD2knG1vaj8+aXmpZ21XYeycPY9EeMqLPT3jppMgF8Ly2LsOxalONlj+MQxAVUZw==, tarball: file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz}
-    version: 0.2.0-SNAPSHOT
+  '@crane199709/sub-app-kit@file:.forge-packages/crane199709-sub-app-kit-0.2.0.tgz':
+    resolution: {integrity: sha512-s//Rbo8fiyzWiLgqD4Y0XL1N4caINVrCqKp78d/z5NZpL1RG6KE1nWUpTRffT694EZi6D0LgIcJnhhorqlfIqw==, tarball: file:.forge-packages/crane199709-sub-app-kit-0.2.0.tgz}
+    version: 0.2.0
     hasBin: true
     peerDependencies:
-      '@crane199709/sdk': 0.2.0-SNAPSHOT
-      '@crane199709/ui': 0.2.0-SNAPSHOT
+      '@crane199709/sdk': 0.2.0
+      '@crane199709/ui': 0.2.0
       '@module-federation/vite': 1.23.5
       '@vitejs/plugin-vue': 6.0.10
       element-plus: 2.14.7
@@ -422,11 +422,11 @@ packages:
       vue-i18n: 11.4.16
       vue-router: 5.4.0
 
-  '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz':
-    resolution: {integrity: sha512-vlMH7MKgaQDXQwAaPJiWozniU+WY/FyDsWhcY81XxV7CCDi5aKiGb8XOnnTszEpUf9jBht1OZmqTDa//rc5XeQ==, tarball: file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz}
-    version: 0.2.0-SNAPSHOT
+  '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0.tgz':
+    resolution: {integrity: sha512-p25thjm1vXng3LNGvaSEq+eYRteP5WElEsN9Yb8g2K0Da0B+ptE5rFqT5QCplIprQyMOGej5PpbuYq76vXgUMg==, tarball: file:.forge-packages/crane199709-ui-0.2.0.tgz}
+    version: 0.2.0
     peerDependencies:
-      '@crane199709/sdk': 0.2.0-SNAPSHOT
+      '@crane199709/sdk': 0.2.0
       element-plus: ^2.14.7
       vue: ^3.5.44
       vue-i18n: ^11.4.16
@@ -5789,14 +5789,14 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3))':
+  '@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       vue: 3.5.44(typescript@5.9.3)
 
-  '@crane199709/sub-app-kit@file:.forge-packages/crane199709-sub-app-kit-0.2.0-SNAPSHOT.tgz(3227cf184942771a654f862c448035ff)':
+  '@crane199709/sub-app-kit@file:.forge-packages/crane199709-sub-app-kit-0.2.0.tgz(3b415f832b07e593b036eb4ec06abed3)':
     dependencies:
-      '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3))
-      '@crane199709/ui': file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))
+      '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3))
+      '@crane199709/ui': file:.forge-packages/crane199709-ui-0.2.0.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))
       '@module-federation/vite': 1.23.5(typescript@5.9.3)(vite@8.3.5(@types/node@24.19.2)(yaml@2.9.1))(vue-tsc@3.3.13(typescript@5.9.3))
       '@vitejs/plugin-vue': 6.0.10(vite@8.3.5(@types/node@24.19.2)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
       element-plus: 2.14.7(vue@3.5.44(typescript@5.9.3))
@@ -5808,9 +5808,9 @@ snapshots:
       vue-i18n: 11.4.16(vue@3.5.44(typescript@5.9.3))
       vue-router: 5.4.0(@vue/compiler-sfc@3.5.45)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@5.9.3)(vue@3.5.44(typescript@5.9.3)))(rolldown@1.2.19)(vite@8.3.5(@types/node@24.19.2)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
 
-  '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0-SNAPSHOT.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))':
+  '@crane199709/ui@file:.forge-packages/crane199709-ui-0.2.0.tgz(@crane199709/sdk@file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3)))(element-plus@2.14.7(vue@3.5.44(typescript@5.9.3)))(vue-i18n@11.4.16(vue@3.5.44(typescript@5.9.3)))(vue@3.5.44(typescript@5.9.3))':
     dependencies:
-      '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0-SNAPSHOT.tgz(vue@3.5.44(typescript@5.9.3))
+      '@crane199709/sdk': file:.forge-packages/crane199709-sdk-0.2.0.tgz(vue@3.5.44(typescript@5.9.3))
       '@element-plus/icons-vue': 2.3.2(vue@3.5.44(typescript@5.9.3))
       element-plus: 2.14.7(vue@3.5.44(typescript@5.9.3))
       vue: 3.5.44(typescript@5.9.3)
@@ -6218,7 +6218,7 @@ snapshots:
       '@deepseek-ai/dsh-credentials': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-llm': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
 
-  '@deepseek-ai/dsh-base@0.2.2-rc.1(c3840c3172504acad8c113d74265a52c)':
+  '@deepseek-ai/dsh-base@0.2.2-rc.1(b65c4cdc83f691670f5fca5daff78920)':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/cordis-plugin-timer': 1.2.0(@deepseek-ai/cordis@4.1.0)
@@ -6252,7 +6252,7 @@ snapshots:
       '@deepseek-ai/dsh-llm': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-llm-deepseek-account': 0.2.2-rc.1(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-deepseek-account@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-agent@0.2.2-rc.1(d9740b81bf2b48fd86b0c38a41e906a0))(@deepseek-ai/dsh-brand@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-util-values@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-launch-environment@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.1(956429393e4ea8c4b7066693d213f8f6))(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-llm-deepseek-api-key': 0.2.2-rc.1(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-credentials@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-launch-environment@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.1(956429393e4ea8c4b7066693d213f8f6))(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
-      '@deepseek-ai/dsh-llm-pi-ai': 0.2.2-rc.1(8e50b21403eada760d4e9ac094059657)
+      '@deepseek-ai/dsh-llm-pi-ai': 0.2.2-rc.1(fbbf767587892a411559ac934c3af74a)
       '@deepseek-ai/dsh-llm-retry': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-agent@0.2.2-rc.1(d9740b81bf2b48fd86b0c38a41e906a0))(@deepseek-ai/dsh-brand@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-session-projection@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-session@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-scope@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))))(@deepseek-ai/dsh-session@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-scope@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-timeout@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-mcp-resources': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-scope@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-system-prompt@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-llm@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-scope@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))(@deepseek-ai/dsh-tools@0.2.2-rc.1(71e9b8099add9aaf7bb42662f07c41a3))
       '@deepseek-ai/dsh-otel': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-session@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-scope@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)))
@@ -7530,7 +7530,7 @@ snapshots:
     optionalDependencies:
       '@deepseek-ai/cordis-plugin-loader': 1.1.0(@deepseek-ai/cordis@4.1.0)(node-addon-require-builtin@0.1.9)
 
-  '@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.1(8e50b21403eada760d4e9ac094059657)':
+  '@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.1(fbbf767587892a411559ac934c3af74a)':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/dsh-attachment': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-brand@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
@@ -7543,7 +7543,7 @@ snapshots:
       '@deepseek-ai/dsh-timeout': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-util-values': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/schemastery': 3.19.0
-      '@earendil-works/pi-ai': 1.5.2(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.11.2)(ws@8.21.3)(zod@4.6.7)
+      '@earendil-works/pi-ai': 1.5.2(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.12.4)(ws@8.21.3)(zod@4.6.7)
     optionalDependencies:
       '@deepseek-ai/cordis-plugin-loader': 1.1.0(@deepseek-ai/cordis@4.1.0)(node-addon-require-builtin@0.1.9)
     transitivePeerDependencies:
@@ -9256,7 +9256,7 @@ snapshots:
       '@deepseek-ai/dsh-typert-protocol': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       zod: 4.4.3
 
-  '@deepseek-ai/dsh@0.2.2-rc.1(137c6081b218522cdb79f2c4a7e95986)':
+  '@deepseek-ai/dsh@0.2.2-rc.1(dd03558dcc242de7db93860409dc7869)':
     dependencies:
       '@deepseek-ai/cordis': 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
       '@deepseek-ai/cordis-plugin-include': 1.1.0(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)
@@ -9268,7 +9268,7 @@ snapshots:
       '@deepseek-ai/dsh-agent-tool-presentation': 0.2.2-rc.1(9121e207bacfe5f50c5d945c203115c2)
       '@deepseek-ai/dsh-app-boot': 0.2.2-rc.1(@deepseek-ai/cordis-plugin-group@1.1.0(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-home-paths@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-launch-environment@0.2.2-rc.1(@deepseek-ai/cordis@4.1.0))
       '@deepseek-ai/dsh-atomic-write': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
-      '@deepseek-ai/dsh-base': 0.2.2-rc.1(c3840c3172504acad8c113d74265a52c)
+      '@deepseek-ai/dsh-base': 0.2.2-rc.1(b65c4cdc83f691670f5fca5daff78920)
       '@deepseek-ai/dsh-client-ui-agent-preset': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-client-ui-cordis': 0.2.2-rc.1(@deepseek-ai/cordis@4.1.0)
       '@deepseek-ai/dsh-cmdline': 0.2.2-rc.1(@deepseek-ai/cordis-plugin-loader@1.1.0)(@deepseek-ai/cordis@4.1.0)
@@ -9482,7 +9482,7 @@ snapshots:
       '@deepseek-ai/cosmokit': 1.9.0
       '@standard-schema/spec': 1.1.0
 
-  '@earendil-works/pi-ai@1.5.2(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.11.2)(ws@8.21.3)(zod@4.6.7)':
+  '@earendil-works/pi-ai@1.5.2(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.12.4)(ws@8.21.3)(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/sdk': 0.129.0(zod@4.6.7)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
@@ -9492,7 +9492,7 @@ snapshots:
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
-      openai: 7.19.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.11.2)(ws@8.21.3)(zod@4.6.7)
+      openai: 7.19.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.12.4)(ws@8.21.3)(zod@4.6.7)
       partial-json: 0.1.7
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -11152,11 +11152,11 @@ snapshots:
       powershell-utils: 0.2.1
       wsl-utils: 1.0.1
 
-  openai@7.19.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.11.2)(ws@8.21.3)(zod@4.6.7):
+  openai@7.19.0(@aws-sdk/credential-provider-node@3.972.97)(@smithy/signature-v4@5.7.5)(undici@8.12.4)(ws@8.21.3)(zod@4.6.7):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.97
       '@smithy/signature-v4': 5.7.5
-      undici: 8.11.2
+      undici: 8.12.4
       ws: 8.21.3
       zod: 4.6.7
 

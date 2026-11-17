@@ -282,7 +282,7 @@ final class PlatformEnvironment implements AutoCloseable {
         if (repository == null || repository.isBlank()) {
             throw new IllegalStateException("设置 AI_FORGE_RUNTIME_REPOSITORY 指向包含 Forge 运行制品的 Maven 仓库");
         }
-        return Path.of(repository, "io/saasforge", module, "0.2.0-SNAPSHOT", module + "-0.2.0-SNAPSHOT.jar");
+        return Path.of(repository, "io/saasforge", module, "0.2.0", module + "-0.2.0.jar");
     }
 
     private static int freePort() {

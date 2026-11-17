@@ -6,7 +6,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 [[ -f "$AI_FORGE_SOURCE/frontend/apps/tenant-app/package.json" ]] || { echo '缺少真实Tenant Shell源码' >&2; exit 1; }
 [[ -f "$AI_FORGE_SOURCE/frontend/apps/platform-console/package.json" ]] || { echo "Missing platform-console source" >&2; exit 1; }
 for module in forge-iam forge-platform forge-gateway; do
-  [[ -f "$AI_FORGE_RUNTIME_REPOSITORY/io/saasforge/$module/0.2.0-SNAPSHOT/$module-0.2.0-SNAPSHOT.jar" ]] || { echo "缺少运行制品: $module" >&2; exit 1; }
+  [[ -f "$AI_FORGE_RUNTIME_REPOSITORY/io/saasforge/$module/0.2.0/$module-0.2.0.jar" ]] || { echo "缺少运行制品: $module" >&2; exit 1; }
 done
 cd "$root"
 out=${AI_E2E_OUTPUT:-$root/ai-service/target/fullstack}

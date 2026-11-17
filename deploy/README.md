@@ -56,7 +56,7 @@ AI_FORGE_RUNTIME_REPOSITORY="$HOME/.m2/repository" \
   bash scripts/check.sh platform
 ```
 
-第二条命令要求 Docker 及与 SDK 配套的真实 `forge-iam`、`forge-platform`、`forge-gateway` 的 `0.2.0-SNAPSHOT` 可执行 jar，按 Maven 仓库目录布局存放。平台不发布这三个 Maven 应用制品；由平台提供运行分发，或在独立平台工作区构建安装后显式传入目录。AI 服务只依赖公开 SDK，测试不引用平台实现类。未提供制品时验收直接失败，不跳过，不以 mock 替代。
+第二条命令要求 Docker 及与 SDK 配套的真实 `forge-iam`、`forge-platform`、`forge-gateway` 的 `0.2.0` 可执行 jar，按 Maven 仓库目录布局存放。平台不发布这三个 Maven 应用制品；由平台提供运行分发，或在独立平台工作区构建安装后显式传入目录。AI 服务只依赖公开 SDK，测试不引用平台实现类。未提供制品时验收直接失败，不跳过，不以 mock 替代。
 
 验收自动创建 PostgreSQL、Redis、RocketMQ 测试容器，以随机端口运行真实 IAM/Platform/Gateway，应用交付的网关配置片段，完成真实登录、PKCE 换 Token、权限拒绝、数据库凭证上报、租户过滤与 RLS、审计经 Outbox/MQ 写入 IAM、App Registry 登记与事件同步。数据只写本次临时库，结束后停止进程并回收容器。日志与制品 SHA-256 在 `ai-service/target/platform-it`，测试报告在 `ai-service/target/surefire-reports`。
 

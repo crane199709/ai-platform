@@ -21,7 +21,7 @@ pnpm install --frozen-lockfile
 
 Java 验收不继承全局 `AI_MODEL_CREDENTIAL_KEY`：常规 Spring 测试配置和真实平台/全栈用例各自提供隔离测试密钥，缺失密钥负例需要环境中没有该变量。CI 同样不在 job 层注入它。
 
-该入口校验候选清单及其全部制品、工程本地 tarball，创建不含本机 Forge 的 Maven 缓存，从候选 file 仓库消费后执行完整 verify 与权限目录检查，最后输出实际解析的 JAR/POM 摘要。后续平台/完整 Shell 验收设置 `AI_MAVEN_REPOSITORY=/tmp/new-ai-candidate-evidence/m2`、`AI_MAVEN_OFFLINE=true`，配套平台运行包另放 `AI_FORGE_RUNTIME_REPOSITORY`，避免源码 install 覆盖 SDK。配套 Shell 源码和运行包须记录提交与摘要。独立宿主在 `vite.config.ts` 显式将 `FORGE_DEV_GATEWAY` 传入 kit 的 `gateway` 选项；仅设置环境变量不会自动改变代理目标，未设置时沿用 kit 默认本地网关。
+该入口校验候选清单及其全部制品、工程本地 tarball，创建不含本机 Forge 的 Maven 缓存，从候选 file 仓库消费后执行完整 verify 与权限目录检查，最后输出实际解析的 JAR/POM 摘要。后续平台/完整 Shell 验收设置 `AI_MAVEN_REPOSITORY=/tmp/new-ai-candidate-evidence/m2`、`AI_MAVEN_SETTINGS=/tmp/new-ai-candidate-evidence/settings.xml`、`AI_MAVEN_OFFLINE=true`，配套平台运行包另放 `AI_FORGE_RUNTIME_REPOSITORY`，避免源码 install 覆盖 SDK。最终坐标的 Maven 缓存按来源仓库 ID 隔离；复用候选缓存时沿用其 settings，否则离线构建会拒绝仅从 `forge-candidate` 下载过的父 POM。未指定 `AI_MAVEN_SETTINGS` 时仍使用工程默认 `.mvn/settings.xml`。配套 Shell 源码和运行包须记录提交与摘要。独立宿主在 `vite.config.ts` 显式将 `FORGE_DEV_GATEWAY` 传入 kit 的 `gateway` 选项；仅设置环境变量不会自动改变代理目标，未设置时沿用 kit 默认本地网关。
 
 当前 `ci.yml` 从目标 Maven 下载 `0.2.0`，须待该坐标按发布流程发布后执行；本地候选通过不能证明目标仓库已可消费。`fullstack.yml` 由输入的固定平台源码构建私有运行分发；两者均不表示远端已经通过。固定候选验收证据见 [本次升级记录](upgrade-v020.md)。
 
@@ -33,6 +33,8 @@ Java 验收不继承全局 `AI_MODEL_CREDENTIAL_KEY`：常规 Spring 测试配�
 
 ```bash
 AI_MAVEN_REPOSITORY=/private/path/candidate-evidence/m2 \
+AI_MAVEN_SETTINGS=/private/path/candidate-evidence/settings.xml \
+AI_MAVEN_OFFLINE=true \
 AI_FORGE_RUNTIME_REPOSITORY=/private/path/runtime-m2 \
 AI_FORGE_SOURCE=/path/to/saas-forge \
 AI_E2E_OUTPUT=/tmp/ai-fullstack \

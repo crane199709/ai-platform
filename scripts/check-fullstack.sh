@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
+maven_settings=${AI_MAVEN_SETTINGS:-$root/ai-service/.mvn/settings.xml}
+[[ -f "$maven_settings" ]] || { echo "缺少 Maven settings 文件: $maven_settings" >&2; exit 1; }
+maven_settings="$(cd "$(dirname "$maven_settings")" && pwd)/$(basename "$maven_settings")"
 : "${AI_FORGE_RUNTIME_REPOSITORY:?指向包含三个真实Forge应用jar的Maven目录}"
 : "${AI_FORGE_SOURCE:?指向与运行包配套的SaaS Forge工作区，用于构建真实tenant-app与platform-console}"
 [[ -f "$AI_FORGE_SOURCE/frontend/apps/tenant-app/package.json" ]] || { echo '缺少真实Tenant Shell源码' >&2; exit 1; }
@@ -37,4 +40,4 @@ pnpm --filter @forge/ai-sub-app build
 flags=(-U)
 [[ "${AI_MAVEN_OFFLINE:-false}" == true ]] && flags=(-o)
 [[ -n "${AI_MAVEN_REPOSITORY:-}" ]] && flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY")
-(cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" test -Dtest=FullStackIT -DforkCount=1 "-DargLine=-Djavax.net.ssl.trustStore=$out/trust.p12 -Djavax.net.ssl.trustStorePassword=local-e2e-trust")
+(cd ai-service && ./mvnw --batch-mode -s "$maven_settings" "${flags[@]}" test -Dtest=FullStackIT -DforkCount=1 "-DargLine=-Djavax.net.ssl.trustStore=$out/trust.p12 -Djavax.net.ssl.trustStorePassword=local-e2e-trust")

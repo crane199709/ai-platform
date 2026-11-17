@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
+maven_settings=${AI_MAVEN_SETTINGS:-$root/ai-service/.mvn/settings.xml}
+[[ -f "$maven_settings" ]] || { echo "缺少 Maven settings 文件: $maven_settings" >&2; exit 1; }
+maven_settings="$(cd "$(dirname "$maven_settings")" && pwd)/$(basename "$maven_settings")"
 cd "$root"
 component=${1:-all}
 case "$component" in
@@ -8,7 +11,7 @@ case "$component" in
     flags=(-U)
     if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
     if [[ -n "${AI_MAVEN_REPOSITORY:-}" ]]; then flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY"); fi
-    (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" verify)
+    (cd ai-service && ./mvnw --batch-mode -s "$maven_settings" "${flags[@]}" verify)
     python3 "$root/.forge-packages/permission-catalog.py" --manifest "$root/ai-service/target/resource-manifest.json" --expected-service ai-service --policy "$root/.forge-packages/permission-policy.json" --previous "$root/.forge-packages/empty-catalog.json" --output "$root/ai-service/target/permission-catalog.json"
     ;;
   runner)
@@ -21,7 +24,7 @@ case "$component" in
     flags=(-U)
     if [[ "${AI_MAVEN_OFFLINE:-false}" == true ]]; then flags=(-o); fi
     if [[ -n "${AI_MAVEN_REPOSITORY:-}" ]]; then flags+=("-Dmaven.repo.local=$AI_MAVEN_REPOSITORY"); fi
-    (cd ai-service && ./mvnw --batch-mode -s .mvn/settings.xml "${flags[@]}" test -Dtest=PlatformIntegrationIT)
+    (cd ai-service && ./mvnw --batch-mode -s "$maven_settings" "${flags[@]}" test -Dtest=PlatformIntegrationIT)
     ;;
   sub-app)
     pnpm --filter @forge/ai-sub-app test

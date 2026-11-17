@@ -4,5 +4,6 @@ import { defineSubAppConfig } from '@crane199709/sub-app-kit/vite'
 // 构建产物暴露 ./sub-app 的 remoteEntry.js，入口地址登记到 App Registry。
 export default defineSubAppConfig({
   appCode: 'ai',
+  gateway: process.env.FORGE_DEV_GATEWAY,
   port: 5180,
 })

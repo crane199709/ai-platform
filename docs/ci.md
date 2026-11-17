@@ -19,7 +19,7 @@ JAVA_HOME=/path/to/jdk17 bash scripts/verify-candidate-sdk.sh /path/to/candidate
 pnpm install --frozen-lockfile
 ```
 
-该入口校验候选清单及其全部制品、工程本地 tarball，创建不含本机 Forge 的 Maven 缓存，从候选 file 仓库消费后执行完整 verify 与权限目录检查，最后输出实际解析的 JAR/POM 摘要。后续平台/完整 Shell 验收设置 `AI_MAVEN_REPOSITORY=/tmp/new-ai-candidate-evidence/m2`、`AI_MAVEN_OFFLINE=true`，配套平台运行包另放 `AI_FORGE_RUNTIME_REPOSITORY`，避免源码 install 覆盖 SDK。配套 Shell 源码和运行包须记录提交与摘要。
+该入口校验候选清单及其全部制品、工程本地 tarball，创建不含本机 Forge 的 Maven 缓存，从候选 file 仓库消费后执行完整 verify 与权限目录检查，最后输出实际解析的 JAR/POM 摘要。后续平台/完整 Shell 验收设置 `AI_MAVEN_REPOSITORY=/tmp/new-ai-candidate-evidence/m2`、`AI_MAVEN_OFFLINE=true`，配套平台运行包另放 `AI_FORGE_RUNTIME_REPOSITORY`，避免源码 install 覆盖 SDK。配套 Shell 源码和运行包须记录提交与摘要。独立宿主在 `vite.config.ts` 显式将 `FORGE_DEV_GATEWAY` 传入 kit 的 `gateway` 选项；仅设置环境变量不会自动改变代理目标，未设置时沿用 kit 默认本地网关。
 
 当前 `ci.yml` 仍从目标 Maven 下载同坐标快照，`fullstack.yml` 则由输入的固定平台源码构建私有运行分发；两者均不能冒充本次未发布候选验收，也不表示远端已经通过。固定候选验收证据见 [本次升级记录](upgrade-v020.md)。
 

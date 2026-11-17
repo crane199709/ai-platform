@@ -37,6 +37,8 @@ AI_E2E_OUTPUT=/tmp/ai-fullstack \
   bash scripts/check-fullstack.sh
 ```
 
+完整门禁在 Shell 流程结束后以同一 IAM 回调源启动 AI 独立开发宿主。开发宿主自动选择账号的第一个 membership，验收使用既有单租户 A 的 `ai-reader` 并断言实际租户；Shell 负责多租户选择、切换与无授权边界。
+
 默认两宽1440/1024，Chromium。产物包含真实Shell与平台控制台截图、Playwright报告/失败trace、公开用量与聚合指标；不要上传生成的TLS私钥、p12、含临时Operator会话的`browser-env.json`或生产Secret。Browser plugin not available，因此使用仓库现有Playwright。mocked TenantClient/DevHost的交互和视觉用例是局部验证，不能替代该门禁。
 
 普通回答的本地提供方发出首段后等待浏览器确认；用例先断言部分正文与取消入口可见、完整回答尚未出现，再释放后半段和结束帧。这样可检测中间代理缓冲整段响应的问题。无授权租户的负向阶段仅允许已关联真实403响应的三个AI读取路径产生预期网络日志，其余控制台错误仍失败；对应路径保存在`browser-*.json`，不会一概忽略403。

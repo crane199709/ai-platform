@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.awaitility.Awaitility;
@@ -589,8 +590,7 @@ class FullStackIT {
         // IAM 的租户回调固定为同一源；Shell 验收结束后把此源交给独立开发宿主。
         shellProcess.descendants().forEach(ProcessHandle::destroy);
         shellProcess.destroy();
-        assertThat(shellProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS))
-                .isTrue();
+        assertThat(shellProcess.waitFor(10, TimeUnit.SECONDS)).isTrue();
         start(
                 "independent-host",
                 Path.of("../ai-sub-app"),
@@ -624,8 +624,7 @@ class FullStackIT {
         command.environment().put("AI_E2E_OUTPUT", output.toString());
         Process browser = command.start();
         try {
-            assertThat(browser.waitFor(3, java.util.concurrent.TimeUnit.MINUTES))
-                    .isTrue();
+            assertThat(browser.waitFor(3, TimeUnit.MINUTES)).isTrue();
             assertThat(browser.exitValue())
                     .as("Independent host: %s", read(output.resolve("dev-host-playwright.log")))
                     .isZero();

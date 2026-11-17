@@ -605,11 +605,18 @@ class FullStackIT {
         Awaitility.await()
                 .atMost(Duration.ofSeconds(45))
                 .ignoreExceptions()
-                .until(() -> PlatformEnvironment.client("http://127.0.0.1:5174")
-                        .get()
-                        .uri("/")
-                        .exchange(
-                                (request, response) -> response.getStatusCode().value() == 200));
+                .until(() -> HttpClient.newBuilder()
+                                .version(HttpClient.Version.HTTP_1_1)
+                                .connectTimeout(Duration.ofSeconds(2))
+                                .build()
+                                .send(
+                                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:5174/"))
+                                                .timeout(Duration.ofSeconds(3))
+                                                .GET()
+                                                .build(),
+                                        HttpResponse.BodyHandlers.discarding())
+                                .statusCode()
+                        == 200);
         var command = new ProcessBuilder("pnpm", "exec", "playwright", "test", "-c", "playwright.dev-host.config.ts")
                 .directory(Path.of("../ai-sub-app").toFile())
                 .redirectErrorStream(true)
